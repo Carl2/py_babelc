@@ -1,6 +1,6 @@
 
-#ifndef ___HOME_CALLE_TMP_RELEASE_REPOS_APP_SERVICE_PLATFORM_FRAMEWORK_GEN_FILES_TRIPLOG_IPC_H__
-#define ___HOME_CALLE_TMP_RELEASE_REPOS_APP_SERVICE_PLATFORM_FRAMEWORK_GEN_FILES_TRIPLOG_IPC_H__
+#ifndef __TESTS_REFERENCE_OUTPUT_COUNTER_IPC_H__
+#define __TESTS_REFERENCE_OUTPUT_COUNTER_IPC_H__
 
 #include <memory>
 #include <type_traits>
@@ -8,90 +8,81 @@
 #include <tuple>
 #include <array>
 
-#include "/home/calle/tmp/release/repos/app-service-platform-framework/dep/app-core-data-engine/include/ocp/ipc/cde/triplog.h"
+#include "tests/headers/counter.h"
 
+#ifndef __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_DECLARATIONS__
+#define __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_DECLARATIONS__
 
-#ifndef __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_DECLARATIONS__
-#define __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_DECLARATIONS__
+namespace com::example::metrics::v1 {
 
-#if __cplusplus < 201700L
-namespace com { namespace volvo { namespace ocp { namespace cde { namespace v1 { 
-#else
-namespace com::volvo::ocp::cde::v1 {
-#endif
-
-    // Registers an implementation of the ::com::volvo::ocp::cde::v1::Triplog interface at the passed IPC Policy.
+    // Registers an implementation of the ::com::example::metrics::v1::CounterService interface at the passed IPC Policy.
     // All remote IPC calls will be forwarded to the passed instance.
     // Returns a shared pointer to the "stub class" which fulfills the same interface. Calls to the
     // methods of the returned instance will also be forwarded to the implementation passed as second argument.
     // "Forgetting" the returned instance will deregister the implementation from the bus interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    registerTriplogImplementation(
-        std::shared_ptr<IpcPolicy>                           theIpcPolicy,
-        const char*                                          theObjectPath,
-        std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> theImplementation
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    registerCounterServiceImplementation(
+        std::shared_ptr<IpcPolicy>                 theIpcPolicy,
+        const char*                                theObjectPath,
+        std::shared_ptr<::com::example::metrics::v1::CounterService> theImplementation
     );
 
-    // Looks up a remote implementation of ::com::volvo::ocp::cde::v1::Triplog using the passed IPC Policy.
+    // Looks up a remote implementation of ::com::example::metrics::v1::CounterService using the passed IPC Policy.
     // Returns a stub which will forward its calls to the remote implementation.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    lookupTriplogImplementation( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath );
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    lookupCounterServiceImplementation( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath );
 
-    // Registers an implementation of the ::com::volvo::ocp::cde::v1::Triplog interface at the passed IPC Policy.
+    // Registers an implementation of the ::com::example::metrics::v1::CounterService interface at the passed IPC Policy.
     // All broadcast IPC calls to the interface will be forwarded to the passed instance.
     // Returns a shared pointer to the "stub class" which fulfills the same interface. Calls to the
     // methods of the returned instance will also be forwarded to the implementation passed as second argument.
     // "Forgetting" the returned instance will deregister the implementation from the bus interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    registerTriplogBroadcastListener(
-        std::shared_ptr<IpcPolicy>                           theIpcPolicy,
-        const char*                                          theObjectPath,
-        std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> theImplementation
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    registerCounterServiceBroadcastListener(
+        std::shared_ptr<IpcPolicy>                 theIpcPolicy,
+        const char*                                theObjectPath,
+        std::shared_ptr<::com::example::metrics::v1::CounterService> theImplementation
     );
 
-    // Creates a proxy implementing the ::com::volvo::ocp::cde::v1::Triplog interface using the passed IPC Policy.
+    // Creates a proxy implementing the ::com::example::metrics::v1::CounterService interface using the passed IPC Policy.
     // The proxy could be used to broadcast messages from the given interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    getTriplogBroadcastProxy( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath );
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    getCounterServiceBroadcastProxy( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath );
 
 
-#if __cplusplus < 201700L
-}}}}}
-#else
 }
-#endif
 
 
 #endif
@@ -103,11 +94,7 @@ namespace com::volvo::ocp::cde::v1 {
 #ifndef __BABEL_HELPERS_FIRST__
 #define __BABEL_HELPERS_FIRST__
 
-#if __cplusplus < 201700L
-namespace babel { 
-#else
 namespace babel {
-#endif
 
     template < class T > struct is_supported_ptr_helper                     : std::false_type {};
     template < class T > struct is_supported_ptr_helper<std::shared_ptr<T>> : std::true_type {};
@@ -118,23 +105,14 @@ namespace babel {
     template < class T > struct is_map_container_helper                     : std::false_type {};
     template < class T > struct is_fixed_container_helper                   : std::false_type {};
 
-#if __cplusplus < 201700L
 }
-#else
-}
-#endif
 
 
 #endif
-
 #ifndef __BABEL_HELPERS_LAST__
 #define __BABEL_HELPERS_LAST__
 
-#if __cplusplus < 201700L
-namespace babel { 
-#else
 namespace babel {
-#endif
 
     template < class T >  struct is_supported_container : is_supported_container_helper< std::remove_cv_t<T>> {};
     template < class T >  struct is_fixed_container     : is_fixed_container_helper< std::remove_cv_t<T>> {};
@@ -148,23 +126,14 @@ namespace babel {
               std::true_type, std::false_type
         >;
 
-#if __cplusplus < 201700L
 }
-#else
-}
-#endif
 
 
 #endif
-
 #ifndef __HAVE_BABEL__IPC_HELPERS__
 #define __HAVE_BABEL__IPC_HELPERS__
 
-#if __cplusplus < 201700L
-namespace babel { namespace ipc { 
-#else
 namespace babel::ipc {
-#endif
 
     //======================================================================
     // Templates for providing a value view of an array
@@ -277,87 +246,60 @@ namespace babel::ipc {
     }
 
 
-#if __cplusplus < 201700L
-}}
-#else
 }
-#endif
 
 
 #endif
+#ifndef __HAVE_BABEL__IPC__COM__EXAMPLE__METRICS__V1__COUNTER_IPC_DECLARATIONS__
+#define __HAVE_BABEL__IPC__COM__EXAMPLE__METRICS__V1__COUNTER_IPC_DECLARATIONS__
 
-#ifndef __HAVE_BABEL__IPC____COM__VOLVO__OCP__CDE__V1__LOG_IPC_DECLARATIONS__
-#define __HAVE_BABEL__IPC____COM__VOLVO__OCP__CDE__V1__LOG_IPC_DECLARATIONS__
+namespace com::example::metrics::v1 {
 
-#if __cplusplus < 201700L
-namespace com { namespace volvo { namespace ocp { namespace cde { namespace v1 { 
-#else
-namespace com::volvo::ocp::cde::v1 {
-#endif
+    void IpcEnumValidate( Counter &theTarget, Counter theValue, std::string &theErrorString ) __attribute__((weak));
 
-    void IpcEnumValidate( Log &theTarget, Log theValue, std::string &theErrorString ) __attribute__((weak));
-
-
-#if __cplusplus < 201700L
-}}}}}
-#else
 }
-#endif
 
 
 #endif
 
-#ifndef __HAVE_BABEL__IPC____COM__VOLVO__OCP__CDE__V1__LOG_IPC_IMPLEMENTATIONS__
-#define __HAVE_BABEL__IPC____COM__VOLVO__OCP__CDE__V1__LOG_IPC_IMPLEMENTATIONS__
+#ifndef __HAVE_BABEL__IPC__COM__EXAMPLE__METRICS__V1__COUNTER_IPC_IMPLEMENTATIONS__
+#define __HAVE_BABEL__IPC__COM__EXAMPLE__METRICS__V1__COUNTER_IPC_IMPLEMENTATIONS__
 
-#if __cplusplus < 201700L
-namespace com { namespace volvo { namespace ocp { namespace cde { namespace v1 { 
-#else
-namespace com::volvo::ocp::cde::v1 {
-#endif
+namespace com::example::metrics::v1 {
 
-    void IpcEnumValidate( Log &theTarget, Log theValue, std::string &theErrorString )  {
+    void IpcEnumValidate( Counter &theTarget, Counter theValue, std::string &theErrorString )  {
         switch (theValue) {
-        case Log::log1:
-        case Log::log2:
+        case Counter::primary:
+        case Counter::secondary:
             theTarget = theValue;
             return;
         }
-        if (!theErrorString.empty()) { theErrorString += ", "; };    theErrorString += (std::to_string(static_cast<std::uint8_t>(theValue)) + " not valid for ::com::volvo::ocp::cde::v1::Log");
+        if (!theErrorString.empty()) { theErrorString += ", "; };    theErrorString += (std::to_string(static_cast<std::uint8_t>(theValue)) + " not valid for ::com::example::metrics::v1::Counter");
     }
 
-
-#if __cplusplus < 201700L
-}}}}}
-#else
 }
-#endif
 
 
 #endif
 
-#ifndef __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_STUBS__
-#define __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_STUBS__
+#ifndef __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_STUBS__
+#define __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_STUBS__
 
-#if __cplusplus < 201700L
-namespace com { namespace volvo { namespace ocp { namespace cde { namespace v1 { 
-#else
-namespace com::volvo::ocp::cde::v1 {
-#endif
+namespace com::example::metrics::v1 {
 
     template <typename IpcPolicy>
-    struct TriplogImplementationProxy final :
-        public ::com::volvo::ocp::cde::v1::Triplog,
+    struct CounterServiceImplementationProxy final :
+        public ::com::example::metrics::v1::CounterService,
         public IpcPolicy::Implementor {
 
-        ~TriplogImplementationProxy() {
-            itsIpcPolicy->deregisterImplementor( itsObjectPath.c_str(), "com.volvo.ocp.cde.v1.Triplog", this);
+        ~CounterServiceImplementationProxy() {
+            itsIpcPolicy->deregisterImplementor( itsObjectPath.c_str(), "com.example.metrics.v1.CounterService", this);
         }
 
-        TriplogImplementationProxy( const TriplogImplementationProxy &)             = delete;
-        TriplogImplementationProxy( TriplogImplementationProxy &&)                  = delete;
-        TriplogImplementationProxy &operator=( const TriplogImplementationProxy & ) = delete;
-        TriplogImplementationProxy &operator=( TriplogImplementationProxy && )      = delete;
+        CounterServiceImplementationProxy( const CounterServiceImplementationProxy &)             = delete;
+        CounterServiceImplementationProxy( CounterServiceImplementationProxy &&)                  = delete;
+        CounterServiceImplementationProxy &operator=( const CounterServiceImplementationProxy & ) = delete;
+        CounterServiceImplementationProxy &operator=( CounterServiceImplementationProxy && )      = delete;
 
     private:
 
@@ -366,41 +308,41 @@ namespace com::volvo::ocp::cde::v1 {
         using ImplementorPtr  = const typename Implementor::SharedPtr &;
         using Boolean         = typename IpcPolicy::Boolean;
         using Message         = typename IpcPolicy::Message;
-        using InterfacePtr    = std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>;
+        using InterfacePtr    = std::shared_ptr<::com::example::metrics::v1::CounterService>;
 
         template <typename Policy>
-        friend std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-        registerTriplogImplementation(
-            std::shared_ptr<Policy>                               theIpcPolicy,
-            const char *                                          theObjectPath,
-            std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>  theImplementation
+        friend std::shared_ptr<::com::example::metrics::v1::CounterService>
+        registerCounterServiceImplementation(
+            std::shared_ptr<Policy>                     theIpcPolicy,
+            const char *                                theObjectPath,
+            std::shared_ptr<::com::example::metrics::v1::CounterService>  theImplementation
         );
 
         IpcPolicyPtr      itsIpcPolicy;
         InterfacePtr      itsImplementation;
         const std::string itsObjectPath;
 
-        TriplogImplementationProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath, InterfacePtr theImplementation )
+        CounterServiceImplementationProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath, InterfacePtr theImplementation )
         : itsIpcPolicy(theIpcPolicy), itsImplementation(theImplementation), itsObjectPath(theObjectPath) {
         }
 
-        void reset( ::com::volvo::ocp::cde::v1::Log log ) override {
-            itsImplementation->reset(log);
+        void reset( ::com::example::metrics::v1::Counter counter ) override {
+            itsImplementation->reset(counter);
         }
 
         static void reset( ImplementorPtr theThis, Message &theArguments, Message & ) {
-            auto &theProxy = dynamic_cast<TriplogImplementationProxy&>(*theThis);
+            auto &theProxy = dynamic_cast<CounterServiceImplementationProxy&>(*theThis);
 
-            ::com::volvo::ocp::cde::v1::Log log;
+            ::com::example::metrics::v1::Counter counter;
 
             std::string theErrorString;
 
             IpcPolicy::getMessageArguments(
                 theArguments,
                 &babel::ipc::EnumReference<
-                    ::com::volvo::ocp::cde::v1::Log,
-                    ::com::volvo::ocp::cde::v1::IpcEnumValidate
-                >(log, theErrorString )
+                    ::com::example::metrics::v1::Counter,
+                    ::com::example::metrics::v1::IpcEnumValidate
+                >(counter, theErrorString )
             );
 
             if (!theErrorString.empty()) { throw std::invalid_argument( theErrorString ); };
@@ -408,7 +350,7 @@ namespace com::volvo::ocp::cde::v1 {
             #pragma GCC diagnostic push
             #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
             theProxy.reset(
-                log
+                counter
             );
             #pragma GCC diagnostic pop
         }
@@ -416,12 +358,12 @@ namespace com::volvo::ocp::cde::v1 {
     };
 
     template <typename IpcPolicy>
-    struct TriplogClientProxy final : public ::com::volvo::ocp::cde::v1::Triplog {
+    struct CounterServiceClientProxy final : public ::com::example::metrics::v1::CounterService {
 
-        TriplogClientProxy( const TriplogClientProxy &)             = delete;
-        TriplogClientProxy( TriplogClientProxy &&)                  = delete;
-        TriplogClientProxy &operator=( const TriplogClientProxy & ) = delete;
-        TriplogClientProxy &operator=( TriplogClientProxy && )      = delete;
+        CounterServiceClientProxy( const CounterServiceClientProxy &)             = delete;
+        CounterServiceClientProxy( CounterServiceClientProxy &&)                  = delete;
+        CounterServiceClientProxy &operator=( const CounterServiceClientProxy & ) = delete;
+        CounterServiceClientProxy &operator=( CounterServiceClientProxy && )      = delete;
 
     private:
         static const char theInterfaceName[];
@@ -431,18 +373,18 @@ namespace com::volvo::ocp::cde::v1 {
         using Message      = typename IpcPolicy::Message;
 
         template <typename Policy>
-        friend std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-        lookupTriplogImplementation( std::shared_ptr<Policy>, const char * );
+        friend std::shared_ptr<::com::example::metrics::v1::CounterService>
+        lookupCounterServiceImplementation( std::shared_ptr<Policy>, const char * );
         
         IpcPolicyPtr      itsIpcPolicy;
         const std::string itsObjectPath;
         
-        TriplogClientProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath )
+        CounterServiceClientProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath )
             : itsIpcPolicy(theIpcPolicy),
               itsObjectPath(theObjectPath) {
         }
 
-        void reset( ::com::volvo::ocp::cde::v1::Log log ) override {
+        void reset( ::com::example::metrics::v1::Counter counter ) override {
             Message theIpcMessage =
                 itsIpcPolicy->createMethodMessage(
                     itsObjectPath.c_str(),
@@ -452,7 +394,7 @@ namespace com::volvo::ocp::cde::v1 {
 
             IpcPolicy::appendMessageArguments(
                 theIpcMessage,
-                static_cast<std::uint8_t>(log)
+                static_cast<std::uint8_t>(counter)
             );
 
             (void)itsIpcPolicy->sendMessage( theIpcMessage );
@@ -461,17 +403,17 @@ namespace com::volvo::ocp::cde::v1 {
     };
 
     template <typename IpcPolicy>
-    const char TriplogClientProxy<IpcPolicy>::theInterfaceName[] = "com.volvo.ocp.cde.v1.Triplog";
+    const char CounterServiceClientProxy<IpcPolicy>::theInterfaceName[] = "com.example.metrics.v1.CounterService";
 
 
     template <typename IpcPolicy>
-    struct TriplogClientProxyWrapper final :
-        public ::com::volvo::ocp::cde::v1::Triplog,
+    struct CounterServiceClientProxyWrapper final :
+        public ::com::example::metrics::v1::CounterService,
         public IpcPolicy::Client {
 
     private:
-        const std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> itsTransmitter;
-        std::weak_ptr<::com::volvo::ocp::cde::v1::Triplog>         itsShortcut;
+        const std::shared_ptr<::com::example::metrics::v1::CounterService> itsTransmitter;
+        std::weak_ptr<::com::example::metrics::v1::CounterService>         itsShortcut;
 
         auto getItsTransmitter() const {
             const auto theShortcut = itsShortcut.lock();
@@ -479,37 +421,37 @@ namespace com::volvo::ocp::cde::v1 {
         }
 
         template <typename Policy>
-        friend std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-        lookupTriplogImplementation( std::shared_ptr<Policy>, const char * );
+        friend std::shared_ptr<::com::example::metrics::v1::CounterService>
+        lookupCounterServiceImplementation( std::shared_ptr<Policy>, const char * );
 
-        explicit TriplogClientProxyWrapper( const std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> theTransmitter )
+        explicit CounterServiceClientProxyWrapper( const std::shared_ptr<::com::example::metrics::v1::CounterService> theTransmitter )
             : itsTransmitter(theTransmitter),
               itsShortcut() {
         }
 
-        void reset( ::com::volvo::ocp::cde::v1::Log log ) override {
-            getItsTransmitter()->reset( log );
+        void reset( ::com::example::metrics::v1::Counter counter ) override {
+            getItsTransmitter()->reset( counter );
         }
 
         void implementorIsRegistered( const typename IpcPolicy::Implementor::SharedPtr &theImplementor ) override {
-            itsShortcut = std::dynamic_pointer_cast<::com::volvo::ocp::cde::v1::Triplog>(theImplementor);
+            itsShortcut = std::dynamic_pointer_cast<::com::example::metrics::v1::CounterService>(theImplementor);
         }
 
     };
 
     template <typename IpcPolicy>
-    struct TriplogBroadcastListener final :
-        public ::com::volvo::ocp::cde::v1::Triplog,
+    struct CounterServiceBroadcastListener final :
+        public ::com::example::metrics::v1::CounterService,
         public IpcPolicy::Implementor {
 
-        ~TriplogBroadcastListener() {
-            itsIpcPolicy->deregisterImplementor( itsObjectPath.c_str(), "com.volvo.ocp.cde.v1.Triplog", this);
+        ~CounterServiceBroadcastListener() {
+            itsIpcPolicy->deregisterImplementor( itsObjectPath.c_str(), "com.example.metrics.v1.CounterService", this);
         }
 
-        TriplogBroadcastListener( const TriplogBroadcastListener &)             = delete;
-        TriplogBroadcastListener( TriplogBroadcastListener &&)                  = delete;
-        TriplogBroadcastListener &operator=( const TriplogBroadcastListener & ) = delete;
-        TriplogBroadcastListener &operator=( TriplogBroadcastListener && )      = delete;
+        CounterServiceBroadcastListener( const CounterServiceBroadcastListener &)             = delete;
+        CounterServiceBroadcastListener( CounterServiceBroadcastListener &&)                  = delete;
+        CounterServiceBroadcastListener &operator=( const CounterServiceBroadcastListener & ) = delete;
+        CounterServiceBroadcastListener &operator=( CounterServiceBroadcastListener && )      = delete;
 
     private:
 
@@ -518,41 +460,41 @@ namespace com::volvo::ocp::cde::v1 {
         using ImplementorPtr  = const typename Implementor::SharedPtr &;
         using Boolean         = typename IpcPolicy::Boolean;
         using Message         = typename IpcPolicy::Message;
-        using InterfacePtr    = std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>;
+        using InterfacePtr    = std::shared_ptr<::com::example::metrics::v1::CounterService>;
 
         template <typename Policy>
-        friend std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-        registerTriplogBroadcastListener(
-            std::shared_ptr<Policy>                               theIpcPolicy,
-            const char *                                          theObjectPath,
-            std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>  theImplementation
+        friend std::shared_ptr<::com::example::metrics::v1::CounterService>
+        registerCounterServiceBroadcastListener(
+            std::shared_ptr<Policy>                     theIpcPolicy,
+            const char *                                theObjectPath,
+            std::shared_ptr<::com::example::metrics::v1::CounterService>  theImplementation
         );
 
         IpcPolicyPtr      itsIpcPolicy;
         InterfacePtr      itsImplementation;
         const std::string itsObjectPath;
 
-        TriplogBroadcastListener( IpcPolicyPtr theIpcPolicy, const char *theObjectPath, InterfacePtr theImplementation )
+        CounterServiceBroadcastListener( IpcPolicyPtr theIpcPolicy, const char *theObjectPath, InterfacePtr theImplementation )
         : itsIpcPolicy(theIpcPolicy), itsImplementation(theImplementation), itsObjectPath(theObjectPath) {
         }
 
-        void reset( ::com::volvo::ocp::cde::v1::Log log ) override {
-            itsImplementation->reset(log);
+        void reset( ::com::example::metrics::v1::Counter counter ) override {
+            itsImplementation->reset(counter);
         }
 
         static void reset( ImplementorPtr theThis, Message &theArguments, Message & ) {
-            auto &theProxy = dynamic_cast<TriplogBroadcastListener&>(*theThis);
+            auto &theProxy = dynamic_cast<CounterServiceBroadcastListener&>(*theThis);
 
-            ::com::volvo::ocp::cde::v1::Log log;
+            ::com::example::metrics::v1::Counter counter;
 
             std::string theErrorString;
 
             IpcPolicy::getMessageArguments(
                 theArguments,
                 &babel::ipc::EnumReference<
-                    ::com::volvo::ocp::cde::v1::Log,
-                    ::com::volvo::ocp::cde::v1::IpcEnumValidate
-                >(log, theErrorString )
+                    ::com::example::metrics::v1::Counter,
+                    ::com::example::metrics::v1::IpcEnumValidate
+                >(counter, theErrorString )
             );
 
             if (!theErrorString.empty()) { throw std::invalid_argument( theErrorString ); };
@@ -560,7 +502,7 @@ namespace com::volvo::ocp::cde::v1 {
             #pragma GCC diagnostic push
             #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
             theProxy.reset(
-                log
+                counter
             );
             #pragma GCC diagnostic pop
         }
@@ -568,12 +510,12 @@ namespace com::volvo::ocp::cde::v1 {
     };
 
     template <typename IpcPolicy>
-    struct TriplogBroadcastProxy final : public ::com::volvo::ocp::cde::v1::Triplog {
+    struct CounterServiceBroadcastProxy final : public ::com::example::metrics::v1::CounterService {
 
-        TriplogBroadcastProxy( const TriplogBroadcastProxy &)             = delete;
-        TriplogBroadcastProxy( TriplogBroadcastProxy &&)                  = delete;
-        TriplogBroadcastProxy &operator=( const TriplogBroadcastProxy & ) = delete;
-        TriplogBroadcastProxy &operator=( TriplogBroadcastProxy && )      = delete;
+        CounterServiceBroadcastProxy( const CounterServiceBroadcastProxy &)             = delete;
+        CounterServiceBroadcastProxy( CounterServiceBroadcastProxy &&)                  = delete;
+        CounterServiceBroadcastProxy &operator=( const CounterServiceBroadcastProxy & ) = delete;
+        CounterServiceBroadcastProxy &operator=( CounterServiceBroadcastProxy && )      = delete;
 
     private:
         static const char theInterfaceName[];
@@ -583,18 +525,18 @@ namespace com::volvo::ocp::cde::v1 {
         using Message      = typename IpcPolicy::Message;
 
         template <typename Policy>
-        friend std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-        getTriplogBroadcastProxy( std::shared_ptr<Policy>, const char * );
+        friend std::shared_ptr<::com::example::metrics::v1::CounterService>
+        getCounterServiceBroadcastProxy( std::shared_ptr<Policy>, const char * );
         
         IpcPolicyPtr      itsIpcPolicy;
         const std::string itsObjectPath;
         
-        TriplogBroadcastProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath )
+        CounterServiceBroadcastProxy( IpcPolicyPtr theIpcPolicy, const char *theObjectPath )
             : itsIpcPolicy(theIpcPolicy),
               itsObjectPath(theObjectPath) {
         }
 
-        void reset( ::com::volvo::ocp::cde::v1::Log log ) override {
+        void reset( ::com::example::metrics::v1::Counter counter ) override {
             Message theIpcMessage =
                 itsIpcPolicy->createSignalMessage(
                     itsObjectPath.c_str(),
@@ -604,7 +546,7 @@ namespace com::volvo::ocp::cde::v1 {
 
             IpcPolicy::appendMessageArguments(
                 theIpcMessage,
-                static_cast<std::uint8_t>(log)
+                static_cast<std::uint8_t>(counter)
             );
 
             (void)itsIpcPolicy->emitSignal( theIpcMessage );
@@ -613,137 +555,125 @@ namespace com::volvo::ocp::cde::v1 {
     };
 
     template <typename IpcPolicy>
-    const char TriplogBroadcastProxy<IpcPolicy>::theInterfaceName[] = "com.volvo.ocp.cde.v1.Triplog";
+    const char CounterServiceBroadcastProxy<IpcPolicy>::theInterfaceName[] = "com.example.metrics.v1.CounterService";
 
-#if __cplusplus < 201700L
-}}}}}
-#else
 }
-#endif
 
 
 #endif
 
-#ifndef __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_IMPLEMENTATIONS__
-#define __HAVE___COM__VOLVO__OCP__CDE__V1__TRIPLOG_IMPLEMENTATIONS__
+#ifndef __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_IMPLEMENTATIONS__
+#define __HAVE__COM__EXAMPLE__METRICS__V1__COUNTERSERVICE_IMPLEMENTATIONS__
 
-#if __cplusplus < 201700L
-namespace com { namespace volvo { namespace ocp { namespace cde { namespace v1 { 
-#else
-namespace com::volvo::ocp::cde::v1 {
-#endif
+namespace com::example::metrics::v1 {
 
-    // Registers an implementation of the ::com::volvo::ocp::cde::v1::Triplog interface at the passed IPC Policy.
+    // Registers an implementation of the ::com::example::metrics::v1::CounterService interface at the passed IPC Policy.
     // All remote IPC calls will be forwarded to the passed instance.
     // Returns a shared pointer to the "stub class" which fulfills the same interface. Calls to the
     // methods of the returned instance will also be forwarded to the implementation passed as second argument.
     // "Forgetting" the returned instance will deregister the implementation from the bus interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    registerTriplogImplementation(
-        std::shared_ptr<IpcPolicy>                           theIpcPolicy,
-        const char*                                          theObjectPath,
-        std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> theImplementation
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    registerCounterServiceImplementation(
+        std::shared_ptr<IpcPolicy>                 theIpcPolicy,
+        const char*                                theObjectPath,
+        std::shared_ptr<::com::example::metrics::v1::CounterService> theImplementation
     ) 
     {
-        using ImplementationProxy = TriplogImplementationProxy<IpcPolicy>;
+        using ImplementationProxy = CounterServiceImplementationProxy<IpcPolicy>;
 
         auto theProxy = std::shared_ptr<ImplementationProxy>(
             new ImplementationProxy(theIpcPolicy, theObjectPath, theImplementation)
         );
 
-        theIpcPolicy->registerImplementor(theObjectPath, "com.volvo.ocp.cde.v1.Triplog", theProxy )
+        theIpcPolicy->registerImplementor(theObjectPath, "com.example.metrics.v1.CounterService", theProxy )
             .template addMethod< void, std::uint8_t >( "reset", ImplementationProxy::reset )
             .publish();
 
         return theProxy;
     }
-    // Looks up a remote implementation of ::com::volvo::ocp::cde::v1::Triplog using the passed IPC Policy.
+    // Looks up a remote implementation of ::com::example::metrics::v1::CounterService using the passed IPC Policy.
     // Returns a stub which will forward its calls to the remote implementation.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    lookupTriplogImplementation( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath ) 
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    lookupCounterServiceImplementation( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath ) 
     {
-        const auto theProxy = std::shared_ptr<TriplogClientProxyWrapper<IpcPolicy>>(
-            new TriplogClientProxyWrapper<IpcPolicy>( 
-                std::shared_ptr<TriplogClientProxy<IpcPolicy>>(
-                    new TriplogClientProxy<IpcPolicy>(theIpcPolicy,theObjectPath)
+        const auto theProxy = std::shared_ptr<CounterServiceClientProxyWrapper<IpcPolicy>>(
+            new CounterServiceClientProxyWrapper<IpcPolicy>( 
+                std::shared_ptr<CounterServiceClientProxy<IpcPolicy>>(
+                    new CounterServiceClientProxy<IpcPolicy>(theIpcPolicy,theObjectPath)
                 )
             )
         );
         theProxy->itsShortcut = 
-            std::dynamic_pointer_cast<::com::volvo::ocp::cde::v1::Triplog>(
-                theIpcPolicy->registerClient( theProxy, theObjectPath, TriplogClientProxy<IpcPolicy>::theInterfaceName )
+            std::dynamic_pointer_cast<::com::example::metrics::v1::CounterService>(
+                theIpcPolicy->registerClient( theProxy, theObjectPath, CounterServiceClientProxy<IpcPolicy>::theInterfaceName )
             );
         return theProxy;
     }
-    // Registers an implementation of the ::com::volvo::ocp::cde::v1::Triplog interface at the passed IPC Policy.
+    // Registers an implementation of the ::com::example::metrics::v1::CounterService interface at the passed IPC Policy.
     // All broadcast IPC calls to the interface will be forwarded to the passed instance.
     // Returns a shared pointer to the "stub class" which fulfills the same interface. Calls to the
     // methods of the returned instance will also be forwarded to the implementation passed as second argument.
     // "Forgetting" the returned instance will deregister the implementation from the bus interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    registerTriplogBroadcastListener(
-        std::shared_ptr<IpcPolicy>                           theIpcPolicy,
-        const char*                                          theObjectPath,
-        std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog> theImplementation
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    registerCounterServiceBroadcastListener(
+        std::shared_ptr<IpcPolicy>                 theIpcPolicy,
+        const char*                                theObjectPath,
+        std::shared_ptr<::com::example::metrics::v1::CounterService> theImplementation
     ) 
     {
-        using ImplementationProxy = TriplogBroadcastListener<IpcPolicy>;
+        using ImplementationProxy = CounterServiceBroadcastListener<IpcPolicy>;
 
         auto theProxy = std::shared_ptr<ImplementationProxy>(
             new ImplementationProxy(theIpcPolicy, theObjectPath, theImplementation)
         );
 
-        theIpcPolicy->registerListener(theObjectPath, "com.volvo.ocp.cde.v1.Triplog", theProxy )
+        theIpcPolicy->registerListener(theObjectPath, "com.example.metrics.v1.CounterService", theProxy )
             .template addSignal< std::uint8_t >( "reset", ImplementationProxy::reset )
             .publish();
 
         return theProxy;
     }
-    // Creates a proxy implementing the ::com::volvo::ocp::cde::v1::Triplog interface using the passed IPC Policy.
+    // Creates a proxy implementing the ::com::example::metrics::v1::CounterService interface using the passed IPC Policy.
     // The proxy could be used to broadcast messages from the given interface.
     //
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
-    // * ::com::volvo::ocp::cde::v1::Triplog can be registered both as a broadcast 
+    // * ::com::example::metrics::v1::CounterService can be registered both as a broadcast 
     // * and a call interface since none of its methods has a return value.
     // * Be sure to use the correct register functions for both client and server!
     // ***** WARNING *** WARNING *** WARNING *** WARNING *** WARNING **********
     //
     template <typename IpcPolicy>
-    std::shared_ptr<::com::volvo::ocp::cde::v1::Triplog>
-    getTriplogBroadcastProxy( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath ) 
+    std::shared_ptr<::com::example::metrics::v1::CounterService>
+    getCounterServiceBroadcastProxy( std::shared_ptr<IpcPolicy> theIpcPolicy, const char *theObjectPath ) 
     {
-        return std::shared_ptr<Triplog>(new TriplogBroadcastProxy<IpcPolicy>(theIpcPolicy,theObjectPath));
+        return std::shared_ptr<CounterService>(new CounterServiceBroadcastProxy<IpcPolicy>(theIpcPolicy,theObjectPath));
     }
 
-#if __cplusplus < 201700L
-}}}}}
-#else
 }
-#endif
 
 
 #endif

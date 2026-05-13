@@ -49,7 +49,7 @@
   - Consumer headers use ~[[babelc::*]]~ attribute syntax (GCC C++20+).
   - A ~libclang.so~ shared library is present on the build host.
   - Reference babelc binary is at
-    ~/opt/sspc/0.24.1/sysroots/x86_64-wrlinuxsdk-linux/usr/bin/babelc~.
+    the platform SDK's sysroot (e.g. ~/path/to/sdk/sysroots/.../usr/bin/babelc~).
 
 * Risks & Open Questions
 
@@ -81,7 +81,7 @@
      output must reproduce this self-contained structure exactly because
      consumers ~#include~ the generated header directly without linking a
      separate library (except the optional ~babelc_json_helpers~ convenience
-     layer in ~lib-ocpcommon~).
+     layer in ~lib-common~).
 
 * Architecture
 
@@ -400,8 +400,8 @@
    Capture reference output: run babelc in JSON mode on ~addressbook.h~ (and
    possibly additional headers used by the 22 repos) and commit as test fixture.
    Run full JSON pipeline, diff against reference.
-   Test with at least one real production header from the repos (e.g.
-   ~babelconf_version.h~ from ~app-ehorizon~).
+    Test with at least one real production header from the repos (e.g.
+    ~babelconf_version.h~ from a production service).
 
 ** TODO [#B] Task 18: Fix reserved double-underscore in header guards
    After Task 12 verifies identical output, change the include-guard naming
@@ -450,16 +450,11 @@
 
 ** Repos using JSON generator (22)
 
-   ~app-ble-gatt~, ~app-ble-manager~, ~app-callhandler~,
-   ~app-climate-control-management~, ~app-core-data-engine~,
-   ~app-driver-authentication~, ~app-driver-time-justification~,
-   ~app-ehorizon~, ~app-emergency-assistance~, ~app-event-data-uploader~,
-   ~app-geozone-management~, ~app-hv-charging-mgmt~, ~app-message-handler~,
-   ~app-multi-apn~, ~app-service-discovery~, ~app-service-platform-framework~,
-   ~app-tacho-download~, ~app-test-service~, ~app-vdr~,
-   ~app-vehicle-prep-mgmt~, ~app-voicecall~, ~lib-ocpcommon~.
+   The JSON generator is used by 22 production service repositories
+   covering areas such as connectivity, vehicle data, charging, navigation,
+   telephony, diagnostics, and platform infrastructure.
 
-** Runtime helper library (~lib-ocpcommon~)
+** Runtime helper library (~lib-common~)
 
    ~babelc_json_helpers.h~ / ~babelc_json_helpers.cpp~ provide a convenience
    layer on top of the generated code:

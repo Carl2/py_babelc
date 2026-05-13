@@ -29,13 +29,13 @@
    | ~[[babelc::ipc_type("FileDescriptor")]]~           | ~tests/test_types.h:97~     | Yes (string)  |
    | ~[[babelc::use_discriminated_variant]]~             | ~tests/test_types.h:269~    | No            |
    | ~[[babelc::intentionally_incomplete_variant]]~      | ~tests/jsontest.h:76~       | No            |
-   | ~[[babelc::interface_name("org.freedesktop.DBus")]]~ | ~lib-ocpcommon dbus.h:21~  | Yes (string)  |
+   | ~[[babelc::interface_name("org.freedesktop.DBus")]]~ | ~lib-common dbus.h:21~     | Yes (string)  |
 
    *Placement patterns:*
    - After an enum declaration: ~enum struct FD : std::int32_t [[babelc::ipc_type("FileDescriptor")]] {};~
    - After a using/typedef: ~using Event = boost::variant<...> [[babelc::use_discriminated_variant]];~
    - After a using alias: ~using FileDescriptor = FD [[babelc::ipc_type("FileDescriptor")]];~
-   - After a class/struct closing brace: ~} [[babelc::interface_name("com.volvo.ocp...")]];~
+   - After a class/struct closing brace: ~} [[babelc::interface_name("com.example.service...")]];~
 
   Note: attributes can appear on the *same line* as the type declaration, or on
   a *separate line* (e.g. when a multi-line variant ends with ~>~ on one line
@@ -174,11 +174,11 @@
 
 ** DONE Verify with real headers
    CLOSED: [2026-05-04]
-   Tested against 6 real headers from ~~/tmp/release/repos~:
+   Tested against 6 real headers from production repositories:
    - ~stream.h~ (1 ~ipc_type~ attr)
    - ~dataset_types.h~ (1 ~use_discriminated_variant~ attr)
    - ~dbus.h~ (2 ~interface_name~ attrs — newly discovered form)
-   - ~bos_connection.h~ (1 ~interface_name~ attr)
+   - ~device_status.h~ (1 ~interface_name~ attr)
    - ~ehorizon_types.hpp~ (3 ~use_discriminated_variant~ attrs)
    - ~wellknown.hpp~ (0 attrs — pass-through)
    All rewrites correct, zero remaining ~[[babelc::~ after processing.

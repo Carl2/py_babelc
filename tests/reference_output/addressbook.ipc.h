@@ -8,7 +8,7 @@
 #include <tuple>
 #include <array>
 
-#include "/home/calle/git/volvo/babelc/userguidesample/addressbook.h"
+#include "addressbook.h"
 
 
 #ifndef __HAVE___ADDRESSBOOK__V1__SERVER_DECLARATIONS__

@@ -114,7 +114,7 @@
    (e.g. ~getActiveClass() → ConnectionClass~, ~getCommInfo() → std::string~)
    produce broken output.
 
-   *Required for:* ~bos_connection.h~ (enum return), ~comminfo_cli.h~
+   *Required for:* ~device_status.h~ (enum return), ~diagnostics.h~
    (string return).
 
    *Fix:* Implement in ~ipc_generator.py:_enrich_method~:
@@ -215,10 +215,10 @@
   | # | Input header               | Source repo path                                                             | Reference (~.ipc.h~)               | Complexity                              |
   |---+----------------------------+------------------------------------------------------------------------------+------------------------------------+-----------------------------------------|
   | 1 | ~addressbook.h~            | Already in ~tests/headers/~                                                  | Already in ~tests/reference_output/~ | 1 iface, 1 struct, 1 enum, 1 container  |
-  | 2 | ~bos_connection.h~         | ~app-message-handler/include/ocp/ipc/message_handler/bos_connection.h~       | ~app-message-handler/gen_files/~   | 2 ifaces, 1 enum, non-void enum return  |
-  | 3 | ~triplog.h~                | ~app-core-data-engine/include/ocp/ipc/cde/triplog.h~                         | ~app-service-platform-framework/gen_files/~ | 1 iface, 1 enum param — minimal |
-  | 4 | ~test_service_interface.h~ | ~app-message-handler/dep/app-test-service/include/ocp/ipc/test_service/...~  | ~app-message-handler/gen_files/~   | 2 ifaces, vector param, multi-param, bool |
-  | 5 | ~comminfo_cli.h~           | ~app-message-handler/src/include/internal_ipc/comminfo_cli.h~                | ~app-message-handler/gen_files/~   | 2 methods, non-void string return       |
+  | 2 | ~device_status.h~          | (production service header)                                                  | (production gen_files)             | 2 ifaces, 1 enum, non-void enum return  |
+  | 3 | ~counter.h~                | (production service header)                                                  | (production gen_files)             | 1 iface, 1 enum param — minimal         |
+  | 4 | ~echo_service.h~           | (production service header)                                                  | (production gen_files)             | 2 ifaces, vector param, multi-param, bool |
+  | 5 | ~diagnostics.h~            | (production service header)                                                  | (production gen_files)             | 2 methods, non-void string return       |
 
   *Notes:*
   - All 5 headers have zero external dependencies — suitable for automated CI.
@@ -247,10 +247,10 @@
   # Corpus: (header_filename, reference_filename, extra_clang_args)
   CORPUS = [
       ("addressbook.h", "addressbook.ipc.h", []),
-      ("bos_connection.h", "bos_connection.ipc.h", ["-include", "cstdint"]),
-      ("triplog.h", "triplog.ipc.h", ["-include", "cstdint"]),
-      ("test_service_interface.h", "test_service_interface.ipc.h", []),
-      ("comminfo_cli.h", "comminfo_cli.ipc.h", []),
+      ("device_status.h", "device_status.ipc.h", ["-include", "cstdint"]),
+      ("counter.h", "counter.ipc.h", ["-include", "cstdint"]),
+      ("echo_service.h", "echo_service.ipc.h", []),
+      ("diagnostics.h", "diagnostics.ipc.h", []),
   ]
 
 
@@ -426,10 +426,10 @@
 ** DONE [#A] Commit test corpus fixtures
    Copy 4 source headers and their babelc-generated references into
    ~tests/headers/~ and ~tests/reference_output/~:
-   - ~bos_connection.h~ / ~.ipc.h~ (non-void enum return)
-   - ~triplog.h~ / ~.ipc.h~ (simple enum param)
-   - ~test_service_interface.h~ / ~.ipc.h~ (multi-param, container, bool)
-   - ~comminfo_cli.h~ / ~.ipc.h~ (non-void string return)
+   - ~device_status.h~ / ~.ipc.h~ (non-void enum return)
+   - ~counter.h~ / ~.ipc.h~ (simple enum param)
+   - ~echo_service.h~ / ~.ipc.h~ (multi-param, container, bool)
+   - ~diagnostics.h~ / ~.ipc.h~ (non-void string return)
 
 ** DONE [#A] Implement ~test_ipc_correctness.py~
    Parametrized pytest test as described in [[*Test Implementation]].
@@ -443,7 +443,7 @@
 
 ** TODO [#B] Run on complex headers with sysroot (manual)
    Document results for ~logconfiguration.h~, ~registered_services.h~, and
-   any other headers requiring ~/opt/sspc/~ sysroot access.
+   any other headers requiring a platform SDK sysroot.
 
 * Implementation Notes
 

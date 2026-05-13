@@ -169,10 +169,10 @@ def normalise(text: str) -> str:
 
 CORPUS = [
     ("addressbook.h", "addressbook.ipc.h", []),
-    ("bos_connection.h", "bos_connection.ipc.h", []),
-    ("triplog.h", "triplog.ipc.h", []),
-    ("test_service_interface.h", "test_service_interface.ipc.h", []),
-    ("comminfo_cli.h", "comminfo_cli.ipc.h", []),
+    ("device_status.h", "device_status.ipc.h", []),
+    ("counter.h", "counter.ipc.h", []),
+    ("echo_service.h", "echo_service.ipc.h", []),
+    ("diagnostics.h", "diagnostics.ipc.h", []),
 ]
 
 

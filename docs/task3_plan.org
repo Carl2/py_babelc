@@ -19,7 +19,7 @@
 * Type Categories
 
   Based on analysis of ~addressbook.h~, the reference output, and real
-  production headers from ~~/tmp/release/repos~:
+  production headers from production repositories:
 
   | Category     | Examples from codebase                                           |
   |--------------+------------------------------------------------------------------|
@@ -239,18 +239,18 @@
      model. The model carries the facts; the generator carries the policy.
 
   7. *Support both ~std::variant~ and ~boost::variant~* — Survey of
-     ~~/tmp/release/repos~ shows that all babelc-annotated variant aliases
+     production repositories shows that all babelc-annotated variant aliases
      currently use ~boost::variant~:
-     - ~app-ehorizon~ — 3 ~boost::variant~ with ~[[babelc::use_discriminated_variant]]~
-     - ~syscfg-provider~ — 6 ~boost::variant~ (mix of ~use_discriminated_variant~ and ~intentionally_incomplete_variant~)
-     - ~app-core-data-engine~ — ~boost::variant~ with ~[[babelc::intentionally_incomplete_variant]]~
-     - ~app-service-platform-framework~ — ~boost::variant~ in fake_impl headers
+     - service A — 3 ~boost::variant~ with ~[[babelc::use_discriminated_variant]]~
+     - service B — 6 ~boost::variant~ (mix of ~use_discriminated_variant~ and ~intentionally_incomplete_variant~)
+     - service C — ~boost::variant~ with ~[[babelc::intentionally_incomplete_variant]]~
+     - service D — ~boost::variant~ in fake_impl headers
 
      However, newer non-babelc code already uses ~std::variant~:
-     - ~app-connectivity-management-service~ — ~std::variant~ for ~BearerStatus~
-     - ~app-message-handler~ — ~std::variant~ for ~StatsResult~, ~TimeToLive~
-     - ~app-vpn-configurator~ — ~std::variant~ for ~SwapVariantType~
-     - ~lib-ocphttp~ — ~std::variant~ for ~CaFile~ option
+     - service E — ~std::variant~ for ~BearerStatus~
+     - service F — ~std::variant~ for ~StatsResult~, ~TimeToLive~
+     - service G — ~std::variant~ for ~SwapVariantType~
+     - library H — ~std::variant~ for ~CaFile~ option
 
      The ~VariantType~ dataclass carries a ~variant_kind~ field (~"std"~ or
      ~"boost"~) so the parser records which variant backend the header uses.
