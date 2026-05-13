@@ -1,0 +1,471 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: py_babelc — Python/libclang D-Bus IPC Code Generator
+#+FILETAGS: :dbus:sdbus:python:codegen:libclang:
+#+DATE: 2026-05-04
+#+AUTHOR: 
+#+STARTUP: overview
+#+PRIORITIES: A B C
+#+PROPERTY: branch main
+
+* Overview
+
+  Replace the C++ babelc tool with a Python package (~py_babelc~) that uses
+  libclang to parse annotated C++ headers and generates sdbus D-Bus IPC stubs
+  (server) and proxies (client) using Jinja2 templates.
+
+  The existing ~sdbus-policy.h~ runtime header is *not* changed — the generated
+  code continues to depend on it.
+
+  All Python code follows a functional, railway-oriented style using the
+  ~pymonad~ library's ~Maybe~ monad, curried functions, and bind-pipelines.
+
+* Goals
+
+  - Parse annotated C++ headers correctly using a real C++ AST (libclang).
+  - Generate the same sdbus IPC stub/proxy code that babelc currently generates.
+  - Generate the same JSON serialization/deserialization code that babelc
+    currently generates (~-babelcOutput=Json~ mode) — used by 22 repos.
+  - Keep existing header annotation syntax (~[[babelc::ipc_type(...)]]~ etc.)
+    intact — no changes required to consumer headers.
+  - Write all Python in functional railway-oriented style (pymonad/Maybe).
+  - Ship as an installable Python package with a clean CLI (~pyproject.toml~).
+  - Include a test suite (pytest) covering parsing, type model, and generation.
+
+* Non-Goals
+
+  - Stream serialization generator.
+  - Dependency file generator.
+  - Drop-in CLI compatibility with babelc's option syntax.
+  - Replacing or modifying ~sdbus-policy.h~.
+
+* Constraints & Assumptions
+
+  - libclang Python bindings (~clang~ package) available in the build environment.
+  - ~pymonad~ available via pip.
+  - ~jinja2~ available via pip.
+  - Python >= 3.10 (dataclasses, match statements, ~|~ union types).
+  - Consumer headers use ~[[babelc::*]]~ attribute syntax (GCC C++20+).
+  - A ~libclang.so~ shared library is present on the build host.
+  - Reference babelc binary is at
+    ~/opt/sspc/0.24.1/sysroots/x86_64-wrlinuxsdk-linux/usr/bin/babelc~.
+
+* Risks & Open Questions
+
+  1. *Attribute visibility in libclang*: ~[[babelc::ipc_type(...)]]~ is a vendor
+     attribute unknown to Clang. A lightweight regex pre-pass rewrites these to
+     ~[[clang::annotate("babelc::X=Y")]]~ before feeding to libclang, so they
+     appear as ~AnnotateAttr~ nodes in the AST.
+     - Risk: edge-case attribute syntax (nested parens, multiple args) needs
+       careful regex handling. Mitigate with targeted unit tests.
+
+  2. *libclang version compatibility*: Different libclang versions expose slightly
+     different APIs. Pin the ~clang~ package version in ~requirements.txt~ and
+     document the minimum supported version.
+
+  3. *Template completeness*: The babelc IPC generator produces ~908 lines for a
+     simple interface (~addressbook.h~). Generated patterns include: enum
+     validation, struct serialization (TupleView, ReadContainer, WriteContainer),
+     varying-length container serialization, implementation proxy, client proxy,
+     client proxy wrapper, broadcast listener, broadcast proxy, registration
+     functions. Each must be ported to Jinja2 templates.
+
+  4. *Cross-compilation context*: The tool runs on the build host. libclang must
+     parse headers referencing target-platform standard library headers. May need
+     ~--sysroot~ or ~-I~ flags passed through to libclang.
+
+  5. *JSON generator self-containment*: Each ~.json.h~ embeds the entire
+     ~babel::JSON::parser~ (~735 lines) plus generic templates for arithmetic,
+     string, bool, containers, optionals, variants, and pointers.  Our Jinja2
+     output must reproduce this self-contained structure exactly because
+     consumers ~#include~ the generated header directly without linking a
+     separate library (except the optional ~babelc_json_helpers~ convenience
+     layer in ~lib-ocpcommon~).
+
+* Architecture
+
+  #+begin_src text
+  input.h
+    │
+    ▼
+  ┌──────────────────────┐
+  │  pre_process.py      │  regex: [[babelc::X]] → [[clang::annotate(...)]]
+  └──────────────────────┘
+    │ modified header (temp file)
+    ▼
+  ┌──────────────────────┐
+  │  clang_parser.py     │  libclang AST walk → raw cursor data
+  └──────────────────────┘
+    │ list of raw type dicts
+    ▼
+  ┌──────────────────────┐
+  │  type_model.py       │  frozen dataclasses: StructType, EnumType,
+  │                      │  InterfaceType, BuiltinType, ContainerType, ...
+  └──────────────────────┘
+    │ CompilationUnit dataclass
+    ├───────────────────────────────────┐
+    ▼                                   ▼
+  ┌──────────────────────┐  ┌──────────────────────────┐
+  │  ipc_generator.py    │  │  json_generator.py       │
+  │  templates/ipc_*     │  │  templates/json_*        │
+  └──────────────────────┘  └──────────────────────────┘
+    │ generated C++ string    │ generated C++ string
+    ▼                         ▼
+  output.ipc.h              output.json.h
+  #+end_src
+
+  *Pipeline shape (railway-oriented):*
+
+  #+begin_src python
+  # IPC mode
+  result = (
+      Just({"header_path": path, "clang_args": args, "output_path": out})
+      .bind(rewrite_babelc_attributes)   # pre_process.py
+      .bind(parse_with_clang)            # clang_parser.py
+      .bind(extract_type_model)          # type_model.py
+      .bind(validate_type_model)         # type_model.py
+      .bind(render_ipc_header(out_path)) # ipc_generator.py
+      .bind(write_output)
+  )
+
+  # JSON mode
+  result = (
+      Just({"header_path": path, "clang_args": args, "output_path": out})
+      .bind(rewrite_babelc_attributes)    # pre_process.py
+      .bind(parse_with_clang)             # clang_parser.py
+      .bind(extract_type_model)           # type_model.py
+      .bind(validate_type_model)          # type_model.py
+      .bind(render_json_header(out_path)) # json_generator.py
+      .bind(write_output)
+  )
+  #+end_src
+
+* Package Layout
+
+  #+begin_src text
+  py_babelc/
+    pyproject.toml
+    requirements.txt
+    docs/
+      plan.org
+    babelc_py/
+      __init__.py
+      __main__.py          # argparse CLI, pipeline entry point
+      pre_process.py       # attribute syntax rewriter
+      clang_parser.py      # libclang AST walking
+      type_model.py        # frozen dataclasses + extract/validate
+      ipc_generator.py     # Jinja2 orchestration — IPC mode
+      json_generator.py    # Jinja2 orchestration — JSON mode
+      templates/
+        ipc_header.h.j2    # IPC: top-level output template
+        helpers.j2          # IPC: babel::ipc helper templates (static boilerplate)
+        babel_helpers.j2    # IPC: babel:: type trait helpers (static boilerplate)
+        enum.j2             # IPC: per-enum IpcEnumValidate
+        container.j2        # IPC: per-container IpcReadContainer/IpcWriteContainer
+        struct.j2           # IPC: per-struct TupleView + IpcRead/WriteContainer
+        interface.j2        # IPC: per-interface: all proxy classes + registration fns
+        json_header.h.j2    # JSON: top-level output template
+        json_parser.j2      # JSON: embedded babel::JSON::parser (static ~735 lines)
+        json_indent.j2      # JSON: babel::JSON::Indent class
+        json_helpers.j2     # JSON: babel:: type trait helpers (shared with IPC)
+        json_predefined.j2  # JSON: generic templates (arithmetic, string, bool, containers, etc.)
+        json_enum.j2        # JSON: per-enum interpretJSON/writeJSON
+        json_struct.j2      # JSON: per-struct interpretJSON/writeJSON
+        json_variant.j2     # JSON: per-variant sanity check + delegation
+    tests/
+      conftest.py
+      headers/             # input .h fixtures
+        addressbook.h
+      reference_output/    # babelc-generated snapshots for diff testing
+        addressbook.ipc.h
+        addressbook.json.h # JSON reference (to be captured)
+        sdbus-policy.h     # runtime header (for reference, not generated)
+      test_pre_process.py
+      test_clang_parser.py
+      test_type_model.py
+      test_ipc_generator.py
+      test_integration.py  # full pipeline: generate + diff vs. snapshot
+  #+end_src
+
+* Generated Output Structure
+
+  For each input header, the generated ~.ipc.h~ follows this structure
+  (derived from reference output of ~addressbook.h~):
+
+  1. Include guard
+  2. Standard includes (~<memory>~, ~<type_traits>~, ~<algorithm>~, ~<tuple>~, ~<array>~)
+  3. Include of original header
+  4. *Forward declarations* (per interface):
+     - ~registerXxxImplementation()~
+     - ~lookupXxxImplementation()~
+     - ~registerXxxBroadcastListener()~ (if all methods are void-returning)
+     - ~getXxxBroadcastProxy()~ (if all methods are void-returning)
+  5. *babel:: type trait helpers* (once, guarded):
+     - ~is_supported_ptr~, ~is_supported_container~, etc.
+     - Container specializations (~std::vector~, etc.)
+  6. *babel::ipc helper templates* (once, guarded):
+     - ~ArrayValue~, ~BooleanReference~, ~EnumReference~, ~StringReference~
+     - ~ArrayReference~, ~EnumArrayReference~, ~MakeArrayReference~ variants
+  7. *Per-type IPC declarations* (each guarded):
+     - For containers (vector/list): ~_ArrayView~ typedef, ~IpcReadContainer~/~IpcWriteContainer~ decls
+     - For enums: ~IpcEnumValidate~ decl
+     - For structs: ~_TupleView~ typedef, ~IpcReadContainer~/~IpcWriteContainer~ decls
+  8. *Per-type IPC implementations* (each guarded):
+     - Container read/write bodies
+     - Enum validate switch-case body
+     - Struct read/write bodies (composing field-level read/write calls)
+  9. *Per-interface stubs* (guarded):
+     - ~XxxImplementationProxy~ — server-side, inherits interface + Implementor
+     - ~XxxClientProxy~ — client-side, creates messages and sends
+     - ~XxxClientProxyWrapper~ — wraps client with local shortcut
+     - ~XxxBroadcastListener~ — signal receiver (if applicable)
+     - ~XxxBroadcastProxy~ — signal emitter (if applicable)
+  10. *Per-interface registration implementations* (guarded):
+      - ~registerXxxImplementation()~ — creates proxy, builds vtable, publishes
+      - ~lookupXxxImplementation()~ — creates client proxy wrapper, registers client
+      - ~registerXxxBroadcastListener()~ — creates listener, builds signal vtable
+      - ~getXxxBroadcastProxy()~ — creates broadcast proxy
+  11. Final ~#endif~
+
+* Tasks [11/17]
+
+** DONE [#A] Task 1: Project scaffold
+   CLOSED: [2026-05-04]
+   Create ~pyproject.toml~, ~requirements.txt~ (pymonad, jinja2, clang),
+   ~babelc_py/~ package skeleton with empty ~__init__.py~ modules,
+   ~tests/~ directory with ~conftest.py~, ~.gitignore~.
+   Verify ~pip install -e .~ works and ~pytest~ runs (with zero tests).
+
+** DONE [#A] Task 2: ~pre_process.py~ — attribute rewriter
+   CLOSED: [2026-05-04]
+   Implement + test the regex pre-pass that converts:
+   - ~[[babelc::ipc_type("X")]]~ → ~[[clang::annotate("babelc::ipc_type=X")]]~
+   - ~[[babelc::use_discriminated_variant]]~ → ~[[clang::annotate("babelc::use_discriminated_variant")]]~
+   - ~[[babelc::interface_name("X")]]~ → ~[[clang::annotate("babelc::interface_name=X")]]~
+   Uses functional style: returns ~Maybe~ with rewritten file content.
+   14 unit tests, verified on 6 real production headers.
+
+** DONE [#A] Task 3: ~type_model.py~ — frozen dataclasses
+   CLOSED: [2026-05-04]
+   Define all value types as ~@dataclass(frozen=True)~:
+   - ~BuiltinType~, ~EnumType~ (with enumerators), ~TypedefType~
+   - ~StructType~ (with fields), ~InterfaceType~ (with methods)
+   - ~ContainerType~ (vector/list/array/map/optional/variant)
+   - ~PointerType~ (shared_ptr/unique_ptr)
+   - ~CompilationUnit~ (top-level: all types, interfaces, namespaces)
+   No logic here — pure data.
+
+** DONE [#A] Task 4: ~clang_parser.py~ — AST walking
+   CLOSED: [2026-05-04]
+   Implement ~parse_with_clang(ctx) -> Maybe~ and ~extract_type_model(ctx) -> Maybe~.
+   Walk the libclang AST and populate the type model dataclasses.
+   Cover: structs, enums, typedefs, using aliases, abstract classes (interfaces),
+   namespaces, ~AnnotateAttr~ nodes.
+   Added ~discover_system_cpp_includes()~ for pip libclang compatibility.
+   25 unit tests, all passing against ~addressbook.h~ fixture.
+
+** DONE [#B] Task 5: ~type_model.py~ — validation
+   CLOSED: [2026-05-04]
+   Implement ~validate_type_model(ctx) -> Maybe~.
+   Checks:
+   - ~ipc_type~ annotation targets compatible underlying type.
+   - Interface methods have only supported parameter/return types.
+   - No bare ~int~/~char~ (enforce stdint types).
+   - ~use_discriminated_variant~ only on variant types.
+   V007 (no default args) cancelled — no production header uses it.
+   Added ~is_const~ to ~Method~ for V004 detection.
+   23 validation tests, 98 total tests passing.
+
+** DONE [#A] Task 6: Jinja2 templates — static helpers
+   CLOSED: [2026-05-04]
+   Ported the fixed helper templates:
+   - ~babel_helpers.j2~ — ~babel::~ type trait boilerplate (C++20, no guards)
+   - ~babel_helpers_last.j2~ — closing type traits
+   - ~container_helpers.j2~ — per-container-kind specialisations (vector/list/array/map)
+   - ~helpers.j2~ — ~babel::ipc::~ helper templates (BooleanReference, EnumReference, etc.)
+   All static boilerplate copied from reference output, stripped of ~#if __cplusplus~ guards.
+
+** DONE [#A] Task 7: Jinja2 templates — enum validation (~enum.j2~)
+   CLOSED: [2026-05-04]
+   Generated ~IpcEnumValidate~ function per enum type with:
+   - switch-case over all enumerators
+   - error string accumulation for invalid values
+   - ~__attribute__((weak))~ on declaration
+   Tested with ~addressbook::v1::Sex~ enum.
+
+** DONE [#A] Task 8: Jinja2 templates — container serialization (~container.j2~)
+   CLOSED: [2026-05-04]
+   Generated per varying-length container (vector/list):
+   - ~_ArrayView~ typedef
+   - ~IpcReadContainer~ — simple elements use ~getMessageArray~ + ~assign~;
+     complicated elements use element-by-element ~ReadContainerScope~
+   - ~IpcWriteContainer~ — simple uses ~appendMessageArray~;
+     complicated uses element-by-element ~WriteContainerScope~
+   Tested with ~PhoneNumbers~ (vector<uint64_t>).
+
+** DONE [#A] Task 9: Jinja2 templates — struct serialization (~struct.j2~)
+   CLOSED: [2026-05-04]
+   Generated per struct:
+   - ~_TupleView~ typedef via ~ipc_template_type~ mapping
+   - ~IpcReadContainer~ — ~ReadContainerScope~ + batched simple fields in one
+     ~getMessageArguments~ call; complicated fields as individual calls
+   - ~IpcWriteContainer~ — ~WriteContainerScope~ + batched simple fields in one
+     ~appendMessageArguments~ call; complicated fields as individual calls
+   Enum error string handling included.
+   Tested with ~Person~ struct.
+
+** DONE [#A] Task 10: Jinja2 templates — interface stubs (~interface.j2~)
+   CLOSED: [2026-05-04]
+   Generated per abstract interface class:
+   - Forward declarations with broadcast warning comments
+   - ~ImplementationProxy~ class (server stub, friend of register fn)
+   - ~ClientProxy~ class (client proxy with ~createMethodMessage~/~sendMessage~)
+   - ~ClientProxyWrapper~ class (client with local shortcut via ~weak_ptr~)
+   - ~BroadcastListener~ class (signal receiver, if all methods void)
+   - ~BroadcastProxy~ class (signal emitter with ~createSignalMessage~/~emitSignal~)
+   - Registration function implementations (vtable build + publish)
+   Tested with ~Server~ interface from addressbook.h.
+
+** DONE [#A] Task 11: ~ipc_generator.py~ + ~__main__.py~ — orchestration & CLI
+   CLOSED: [2026-05-04]
+   Implemented ~ipc_generator.py~ (440 lines):
+   - Jinja2 environment with ~PackageLoader~, ~trim_blocks~, ~lstrip_blocks~
+   - Custom filters: ~guard_macro~, ~qualified~, ~ns_open~, ~ns_close~, ~dbus_interface_name~
+   - Type enrichment layer: ~EnrichedField~, ~EnrichedStruct~, ~EnrichedContainer~,
+     ~EnrichedInterface~, ~EnrichedMethod~, ~EnrichedParam~ frozen dataclasses
+   - ~render_ipc_header(output_path)~ curried pipeline step
+   - ~write_output~ pipeline step
+   Wired full CLI pipeline in ~__main__.py~:
+   ~rewrite_babelc_attributes~ → ~parse_with_clang~ → ~extract_type_model~ →
+   ~validate_type_model~ → ~render_ipc_header~ → ~write_output~.
+   Also fixed ~type_model.py~ validator to recognize unqualified type names.
+
+** DONE [#B] Task 12: Integration tests — IPC reference diff
+   Run full pipeline on 5 corpus headers, diff normalised output against
+   committed babelc reference snapshots.  All 5 pass (137 total tests green).
+   Remaining: manual testing with sysroot-dependent headers (priority B).
+   See ~docs/task12_plan.org~ for full details.
+
+** TODO [#A] Task 13: JSON generator — research & design (~task13_plan.org~)
+   Study the babelc JSON generator (~babel_plugins_jsongenerator.cpp~, 1330
+   lines) and produce a design document covering:
+   - What the generated ~.json.h~ contains (structure, sections)
+   - The embedded ~babel::JSON::parser~ (~735 lines of static boilerplate)
+   - The ~babel::JSON::Indent~ class
+   - Generic predefined templates (arithmetic, string, bool, containers,
+     optionals, variants, smart pointers)
+   - Per-type ~interpretJSON~ and ~writeJSON~ template generation for structs and enums
+   - Variant sanity checking and delegation
+   - Template file mapping (which Jinja2 templates produce which sections)
+   - Differences from the IPC generator (JSON handles *all types except
+     interfaces*; IPC handles *all types including interfaces*)
+   - Type closure computation (transitive type dependencies)
+   The design document must be approved before implementation begins.
+
+** TODO [#A] Task 14: JSON generator — static boilerplate templates
+   Create the fixed templates that are emitted once per output file:
+   - ~json_parser.j2~ — the full embedded ~babel::JSON::parser~ (verbatim from
+     ~babel_json_parser.h.txt~, stripped of C++17 guards for C++20)
+   - ~json_indent.j2~ — the ~babel::JSON::Indent~ class
+   - ~json_helpers.j2~ — type trait helpers (~is_supported_container~, etc.)
+     shared structure with IPC but different guard/namespace context
+   - ~json_predefined.j2~ — generic ~interpretJSON~/~writeJSON~ templates for:
+     arithmetic types, ~std::string~, ~bool~, containers (vector/list/array),
+     map containers, optional types, smart pointers, variants
+   These are large but static — copy from babelc reference output.
+
+** TODO [#A] Task 15: JSON generator — per-type templates
+   Create the per-type templates:
+   - ~json_enum.j2~ — per enum: ~interpretJSON~ (string→enum lookup table for
+     named enums, numeric cast for empty enums) + ~writeJSON~ (enum→string
+     for named, numeric for empty)
+   - ~json_struct.j2~ — per struct: ~interpretJSON~ (iterate JSON object fields,
+     required/optional field tracking, error on unknown/missing fields) +
+     ~writeJSON~ (compact/pretty output with label sets)
+   - ~json_variant.j2~ — per variant: sanity check (JSON type coverage
+     warnings), delegation to generic variant templates
+
+** TODO [#A] Task 16: ~json_generator.py~ — orchestration + CLI extension
+   Implement ~json_generator.py~:
+   - Jinja2 environment setup (reuse or share with IPC generator)
+   - Type closure computation (transitive dependencies of all non-interface types)
+   - ~render_json_header(output_path)~ curried pipeline step
+   Extend ~__main__.py~ CLI:
+   - Add ~--type~ / ~-t~ argument: ~ipc~ (default) or ~json~
+   - Route to ~render_ipc_header~ or ~render_json_header~ based on type
+   - JSON mode should *not* require interfaces (unlike IPC which mandates them)
+
+** TODO [#B] Task 17: Integration tests — JSON reference diff
+   Capture reference output: run babelc in JSON mode on ~addressbook.h~ (and
+   possibly additional headers used by the 22 repos) and commit as test fixture.
+   Run full JSON pipeline, diff against reference.
+   Test with at least one real production header from the repos (e.g.
+   ~babelconf_version.h~ from ~app-ehorizon~).
+
+** TODO [#B] Task 18: Fix reserved double-underscore in header guards
+   After Task 12 verifies identical output, change the include-guard naming
+   scheme to avoid leading ~__~ which is reserved for the standard library.
+   E.g. ~__HAVE_BABEL__IPC__...~  →  ~HAVE_BABEL__IPC__...~ (single underscore
+   or no leading underscore).  This is a deliberate deviation from babelc's
+   output — acceptable only after equivalence is proven.
+
+* JSON Generator — Background
+
+  The babelc JSON generator (~-babelcOutput=Json~) is used by 22 repos in the
+  release.  It produces a self-contained ~.json.h~ header that can be
+  ~#include~-d to get JSON serialization/deserialization for annotated types.
+
+** What it generates
+
+   Each ~.json.h~ file contains (in order):
+
+   1. Include guard + standard includes (~<memory>~, ~<type_traits>~, ~<ostream>~,
+      ~<sstream>~, ~<cctype>~)
+   2. Include of the original header
+   3. The full ~babel::JSON::parser~ namespace (~735 lines) — a complete JSON
+      parser with ~Value~ hierarchy (~String~, ~Number~, ~Object~, ~Array~,
+      ~Boolean~, ~Null~), stream tokenization, character traits, error reporting
+   4. ~babel::JSON::Indent~ class for pretty-printing
+   5. ~babel::~ type trait helpers (~is_supported_container~ etc.) — same as IPC
+   6. Forward declarations for all ~babel::JSON~ generic templates
+   7. Per-type code in the user's namespace:
+      - For structs: ~interpretJSON<CharT>(Value, Struct&)~ + ~writeJSON<CharT>(ostream, Struct, Indent)~
+      - For enums: string↔enum lookup or numeric cast
+   8. Full implementations of all ~babel::JSON~ generic templates
+
+** Key differences from IPC generator
+
+   | Aspect                 | IPC                                     | JSON                                      |
+   |------------------------+-----------------------------------------+-------------------------------------------|
+   | Output suffix          | ~.ipc.h~                                | ~.json.h~                                 |
+   | Interfaces handled     | Yes (proxy classes, registration fns)   | No — interfaces are excluded              |
+   | Embedded runtime       | No (depends on ~sdbus-policy.h~)        | Yes (~babel::JSON::parser~ embedded)      |
+   | Serialization target   | D-Bus messages (~IpcPolicy~ template)   | JSON text (~ostream~ / ~Value~ tree)      |
+   | Per-struct pattern     | TupleView + IpcRead/WriteContainer      | interpretJSON + writeJSON                 |
+   | Per-enum pattern       | IpcEnumValidate (switch-case)           | String↔enum lookup table (or numeric)     |
+   | Variant support        | Via ~IpcPolicy::VariantType~            | JSON type dispatch + sanity checks        |
+   | Optional support       | ~std::array<wire_type, 1>~              | JSON null + inner type                    |
+   | Field classification   | Simple vs complicated (batched)         | Required vs optional (has default value)  |
+
+** Repos using JSON generator (22)
+
+   ~app-ble-gatt~, ~app-ble-manager~, ~app-callhandler~,
+   ~app-climate-control-management~, ~app-core-data-engine~,
+   ~app-driver-authentication~, ~app-driver-time-justification~,
+   ~app-ehorizon~, ~app-emergency-assistance~, ~app-event-data-uploader~,
+   ~app-geozone-management~, ~app-hv-charging-mgmt~, ~app-message-handler~,
+   ~app-multi-apn~, ~app-service-discovery~, ~app-service-platform-framework~,
+   ~app-tacho-download~, ~app-test-service~, ~app-vdr~,
+   ~app-vehicle-prep-mgmt~, ~app-voicecall~, ~lib-ocpcommon~.
+
+** Runtime helper library (~lib-ocpcommon~)
+
+   ~babelc_json_helpers.h~ / ~babelc_json_helpers.cpp~ provide a convenience
+   layer on top of the generated code:
+   - ~RootObject~ — wraps a parsed JSON ~Object~
+   - ~getRootObject(json_string)~ — parses JSON text, returns root object
+   - ~parseElement<T>(element)~ — calls ~babel::JSON::interpretJSON<char>~
+   - ~parseRootObjectElement<T>(json, name)~ — one-shot parse of a named element
+   This library is *not generated* — it's hand-written code that depends on the
+   generated ~.json.h~ headers.

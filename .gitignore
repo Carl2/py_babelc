@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+.venv/
+.mypy_cache/
+.pytest_cache/
+
+# Scratch / test output
+babelc.ipc.h
+output_1.ipc.h
+hoppla.hpp
+
+# Emacs
+\#*\#
+*~
+.dir-locals.el

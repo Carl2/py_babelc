@@ -1,0 +1,26 @@
+{# Task 6b: Per-container-kind specialisations. Rendered once per kind in container_kinds_used. #}
+{# Context: kind (str) — e.g. "std::vector", "std::list", "std::array", "std::map" #}
+{% set guard = "__BABEL_HELPERS_" + kind|upper|replace("::", "__") + "__" %}
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <{{ kind.split("::")[1] }}>
+
+namespace babel {
+{% if kind == "std::map" %}
+
+    template < class K, class V > struct is_supported_container_helper<{{ kind }}<K,V>> : std::true_type {};
+    template < class K, class V > struct is_map_container_helper<{{ kind }}<K,V>>       : std::true_type {};
+{% elif kind == "std::array" %}
+
+    template < class T, std::size_t N > struct is_supported_container_helper<{{ kind }}<T,N>> : std::true_type {};
+    template < class T, std::size_t N > struct is_fixed_container_helper<{{ kind }}<T,N>>     : std::true_type {};
+{% else %}
+
+    template < class T> struct is_supported_container_helper<{{ kind }}<T>> : std::true_type {};
+{% endif %}
+
+}
+
+
+#endif

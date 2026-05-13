@@ -1,0 +1,285 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: Task 3: type_model.py — Frozen Dataclasses Design
+#+FILETAGS: :type-model:dataclasses:frozen:
+#+DATE: 2026-05-04
+#+AUTHOR:
+#+STARTUP: overview
+#+PRIORITIES: A B C
+
+* Problem
+
+  The pipeline needs a set of typed, immutable value objects to represent the
+  C++ type model extracted by the clang parser and consumed by the Jinja2
+  templates. These are pure data — no logic, no I/O.
+
+  Every type must be a ~@dataclass(frozen=True)~ per the functional Python style.
+
+* Type Categories
+
+  Based on analysis of ~addressbook.h~, the reference output, and real
+  production headers from ~~/tmp/release/repos~:
+
+  | Category     | Examples from codebase                                           |
+  |--------------+------------------------------------------------------------------|
+  | Builtin      | ~std::uint8_t~, ~std::string~, ~bool~, ~std::int32_t~           |
+  | Enum         | ~Sex : std::uint8_t~, ~StreamPolicy : std::uint8_t~             |
+  | Struct       | ~Person~ (fields: name, sex, phone numbers)                      |
+  | Interface    | ~Server~ (pure virtual methods + virtual dtor)                   |
+  | Alias        | ~PhoneNumber = std::uint64_t~, ~PhoneNumbers = std::vector<...>~ |
+  | Container    | ~std::vector<T>~, ~std::array<T,N>~                              |
+  | Pointer      | ~std::shared_ptr<T>~, ~std::unique_ptr<T>~                       |
+  | Variant      | ~boost::variant<A,B,...>~                                        |
+
+* Dataclass Definitions
+
+** ~Annotation~
+
+   Represents a ~[[babelc::*]]~ attribute attached to a type.
+
+   | Field    | Type            | Description                                    |
+   |----------+-----------------+------------------------------------------------|
+   | ~name~   | ~str~           | Attribute name: ~ipc_type~, ~interface_name~, etc |
+   | ~value~  | ~str \vert None~ | String argument if present, else ~None~         |
+
+   Known annotations from production code:
+
+   | Annotation                              | Attaches to    | Has value? |
+   |-----------------------------------------+----------------+------------|
+   | ~ipc_type("FileDescriptor")~            | enum           | Yes        |
+   | ~use_discriminated_variant~             | variant alias  | No         |
+   | ~intentionally_incomplete_variant~      | variant alias  | No         |
+   | ~interface_name("org.freedesktop.DBus")~ | interface      | Yes        |
+
+** ~Enumerator~
+
+   A single enumerator within an enum.
+
+   | Field    | Type            | Description                       |
+   |----------+-----------------+-----------------------------------|
+   | ~name~   | ~str~           | Enumerator name, e.g. ~"Male"~    |
+   | ~value~  | ~int \vert None~ | Explicit value if present          |
+
+** ~EnumType~
+
+   | Field             | Type                 | Description                                  |
+   |-------------------+----------------------+----------------------------------------------|
+   | ~name~            | ~str~                | Short name, e.g. ~"Sex"~                     |
+   | ~qualified_name~  | ~str~                | Fully qualified, e.g. ~"addressbook::v1::Sex"~ |
+   | ~namespace~       | ~tuple[str, ...]~    | Namespace path, e.g. ~("addressbook", "v1")~ |
+   | ~underlying_type~ | ~str~                | e.g. ~"std::uint8_t"~                         |
+   | ~enumerators~     | ~tuple[Enumerator, ...]~ | Ordered enumerator list                  |
+   | ~annotations~     | ~tuple[Annotation, ...]~ | Babelc attributes on this type           |
+
+** ~Field~
+
+   A field within a struct.
+
+   | Field           | Type            | Description                               |
+   |-----------------+-----------------+-------------------------------------------|
+   | ~name~          | ~str~           | Field name, e.g. ~"itsName"~              |
+   | ~type_name~     | ~str~           | Fully qualified type, e.g. ~"std::string"~ |
+   | ~default_value~ | ~str \vert None~ | Default initializer if present             |
+
+** ~Parameter~
+
+   A method parameter.
+
+   | Field      | Type  | Description                               |
+   |------------+-------+-------------------------------------------|
+   | ~name~     | ~str~ | Parameter name, e.g. ~"thePerson"~        |
+   | ~type_name~ | ~str~ | Fully qualified type, e.g. ~"addressbook::v1::Person"~ |
+   | ~is_const~ | ~bool~ | Whether parameter is const-qualified      |
+   | ~is_ref~   | ~bool~ | Whether parameter is a reference          |
+
+** ~Method~
+
+   A method on an interface.
+
+   | Field          | Type                   | Description                     |
+   |----------------+------------------------+---------------------------------|
+   | ~name~         | ~str~                  | Method name, e.g. ~"add"~      |
+   | ~return_type~  | ~str~                  | Return type, e.g. ~"void"~     |
+   | ~parameters~   | ~tuple[Parameter, ...]~ | Ordered parameter list          |
+   | ~is_pure_virtual~ | ~bool~              | Always ~True~ for interfaces    |
+
+** ~StructType~
+
+   Plain aggregate structs (non-interface).
+
+   | Field            | Type                  | Description                              |
+   |------------------+-----------------------+------------------------------------------|
+   | ~name~           | ~str~                 | Short name                               |
+   | ~qualified_name~ | ~str~                 | Fully qualified name                     |
+   | ~namespace~      | ~tuple[str, ...]~     | Namespace path                           |
+   | ~fields~         | ~tuple[Field, ...]~   | Ordered field list                       |
+   | ~annotations~    | ~tuple[Annotation, ...]~ | Babelc attributes                     |
+
+** ~InterfaceType~
+
+   Abstract class with pure virtual methods — generates proxy/stub code.
+
+   | Field            | Type                     | Description                          |
+   |------------------+--------------------------+--------------------------------------|
+   | ~name~           | ~str~                    | Short name, e.g. ~"Server"~         |
+   | ~qualified_name~ | ~str~                    | Fully qualified name                 |
+   | ~namespace~      | ~tuple[str, ...]~        | Namespace path                       |
+   | ~methods~        | ~tuple[Method, ...]~     | Pure virtual methods (excl. dtor)    |
+   | ~annotations~    | ~tuple[Annotation, ...]~ | e.g. ~interface_name~ attribute      |
+
+** ~AliasType~
+
+   A ~using~ or ~typedef~ declaration.
+
+   | Field            | Type                     | Description                          |
+   |------------------+--------------------------+--------------------------------------|
+   | ~name~           | ~str~                    | Alias name, e.g. ~"PhoneNumbers"~   |
+   | ~qualified_name~ | ~str~                    | Fully qualified name                 |
+   | ~namespace~      | ~tuple[str, ...]~        | Namespace path                       |
+   | ~target_type~    | ~str~                    | What it aliases, e.g. ~"std::vector<addressbook::v1::PhoneNumber>"~ |
+   | ~annotations~    | ~tuple[Annotation, ...]~ | e.g. ~use_discriminated_variant~     |
+
+** ~ContainerType~
+
+   A recognized container type (vector, array, list, map, optional).
+
+   | Field            | Type            | Description                              |
+   |------------------+-----------------+------------------------------------------|
+   | ~name~           | ~str~           | Short name (often from alias)            |
+   | ~qualified_name~ | ~str~           | Fully qualified name                     |
+   | ~namespace~      | ~tuple[str, ...]~ | Namespace path                         |
+   | ~container_kind~ | ~str~           | ~"vector"~, ~"array"~, ~"list"~, ~"map"~, ~"optional"~ |
+   | ~element_type~   | ~str~           | Element type, e.g. ~"addressbook::v1::PhoneNumber"~ |
+   | ~size~           | ~int \vert None~ | Fixed size for ~std::array~, else ~None~ |
+
+** ~PointerType~
+
+   A smart pointer wrapper.
+
+   | Field            | Type              | Description                          |
+   |------------------+-------------------+--------------------------------------|
+   | ~name~           | ~str~             | Short name (often from alias)        |
+   | ~qualified_name~ | ~str~             | Fully qualified name                 |
+   | ~namespace~      | ~tuple[str, ...]~ | Namespace path                       |
+   | ~pointer_kind~   | ~str~             | ~"shared_ptr"~ or ~"unique_ptr"~     |
+   | ~pointee_type~   | ~str~             | What it points to                    |
+
+** ~VariantType~
+
+   A ~std::variant<A,B,...>~ or ~boost::variant<A,B,...>~ type.
+
+   All babelc-annotated variants in existing production headers currently use
+   ~boost::variant~, but newer code is already migrating to ~std::variant~.
+   The model supports both via ~variant_kind~; the generator can adapt its
+   output accordingly. New headers should prefer ~std::variant~.
+
+   | Field            | Type                     | Description                          |
+   |------------------+--------------------------+--------------------------------------|
+   | ~name~           | ~str~                    | Short name (from alias)              |
+   | ~qualified_name~ | ~str~                    | Fully qualified name                 |
+   | ~namespace~      | ~tuple[str, ...]~        | Namespace path                       |
+   | ~variant_kind~   | ~str~                    | ~"std"~ or ~"boost"~                 |
+   | ~alternatives~   | ~tuple[str, ...]~        | Ordered list of alternative types    |
+   | ~annotations~    | ~tuple[Annotation, ...]~ | e.g. ~use_discriminated_variant~     |
+
+** ~BuiltinType~
+
+   A recognized built-in or standard library primitive.
+
+   | Field            | Type  | Description                                     |
+   |------------------+-------+-------------------------------------------------|
+   | ~name~           | ~str~ | Canonical name, e.g. ~"std::uint8_t"~           |
+
+   These are not parsed from headers but rather form a known set used for
+   type resolution and code generation.
+
+** ~CompilationUnit~
+
+   Top-level container for everything extracted from one header file.
+
+   | Field            | Type                        | Description                           |
+   |------------------+-----------------------------+---------------------------------------|
+   | ~header_path~    | ~str~                       | Original input header path            |
+   | ~namespaces~     | ~tuple[str, ...]~           | All namespace paths encountered       |
+   | ~enums~          | ~tuple[EnumType, ...]~      | All enum types                        |
+   | ~structs~        | ~tuple[StructType, ...]~    | All plain structs                     |
+   | ~interfaces~     | ~tuple[InterfaceType, ...]~ | All abstract interface types          |
+   | ~aliases~        | ~tuple[AliasType, ...]~     | All using/typedef aliases             |
+   | ~containers~     | ~tuple[ContainerType, ...]~ | All recognized container types        |
+   | ~pointers~       | ~tuple[PointerType, ...]~   | All smart pointer types               |
+   | ~variants~       | ~tuple[VariantType, ...]~   | All variant types                     |
+
+* Design Decisions
+
+  1. *Tuples not lists* — all collection fields use ~tuple~ for immutability
+     within frozen dataclasses. The parser builds lists and converts to tuples
+     at construction time.
+
+  2. *Flat type references as strings* — fields like ~element_type~,
+     ~target_type~, ~pointee_type~ store fully qualified type names as strings
+     rather than object references. This avoids circular references and keeps
+     serialization simple. The clang parser and templates resolve names via the
+     ~CompilationUnit~ type index.
+
+  3. *Separate InterfaceType from StructType* — although C++ interfaces are
+     ~struct~​s, they generate fundamentally different code (proxy/stub classes
+     vs TupleView/IpcReadContainer). Separating them in the model simplifies
+     template logic.
+
+  4. *Annotations are generic* — rather than separate boolean flags for each
+     attribute (~is_discriminated_variant~, ~ipc_type~, etc.), annotations are
+     a generic list. This is forward-compatible with new babelc attributes.
+
+  5. *BuiltinType is minimal* — it exists mainly as a sentinel/lookup set.
+     No namespace or qualified_name needed since builtins are globally known.
+
+  6. *No generation flags in the model* — decisions about /what/ to generate
+     (TupleView, IpcEnumValidate, etc.) belong in the generator, not the data
+     model. The model carries the facts; the generator carries the policy.
+
+  7. *Support both ~std::variant~ and ~boost::variant~* — Survey of
+     ~~/tmp/release/repos~ shows that all babelc-annotated variant aliases
+     currently use ~boost::variant~:
+     - ~app-ehorizon~ — 3 ~boost::variant~ with ~[[babelc::use_discriminated_variant]]~
+     - ~syscfg-provider~ — 6 ~boost::variant~ (mix of ~use_discriminated_variant~ and ~intentionally_incomplete_variant~)
+     - ~app-core-data-engine~ — ~boost::variant~ with ~[[babelc::intentionally_incomplete_variant]]~
+     - ~app-service-platform-framework~ — ~boost::variant~ in fake_impl headers
+
+     However, newer non-babelc code already uses ~std::variant~:
+     - ~app-connectivity-management-service~ — ~std::variant~ for ~BearerStatus~
+     - ~app-message-handler~ — ~std::variant~ for ~StatsResult~, ~TimeToLive~
+     - ~app-vpn-configurator~ — ~std::variant~ for ~SwapVariantType~
+     - ~lib-ocphttp~ — ~std::variant~ for ~CaFile~ option
+
+     The ~VariantType~ dataclass carries a ~variant_kind~ field (~"std"~ or
+     ~"boost"~) so the parser records which variant backend the header uses.
+     The generator can then emit the correct visitor/access patterns.
+     New headers should prefer ~std::variant~ (C++17 standard, no boost
+     dependency). The boost dependency lives in the consumer headers — not
+     in py_babelc itself.
+
+* Test Strategy
+
+  Since this module is pure data with no logic, tests verify:
+
+  1. *Construction* — each dataclass can be instantiated with valid data.
+  2. *Immutability* — assignment to fields raises ~FrozenInstanceError~.
+  3. *Equality* — two identical instances are equal (dataclass default).
+  4. *Addressbook fixture* — build a ~CompilationUnit~ representing
+     ~addressbook.h~ by hand and verify all types are present and correct.
+
+* Subtasks [2/2]
+
+** DONE Implement frozen dataclasses in ~type_model.py~
+   CLOSED: [2026-05-04]
+   All dataclasses listed above: ~Annotation~, ~Enumerator~, ~EnumType~,
+   ~Field~, ~Parameter~, ~Method~, ~StructType~, ~InterfaceType~, ~AliasType~,
+   ~ContainerType~, ~PointerType~, ~VariantType~, ~BuiltinType~,
+   ~CompilationUnit~.
+
+** DONE Implement ~tests/test_type_model.py~
+   CLOSED: [2026-05-04]
+   Cover construction, immutability, equality, and a hand-built addressbook
+   ~CompilationUnit~ fixture.
+   - 36 tests, all passing.

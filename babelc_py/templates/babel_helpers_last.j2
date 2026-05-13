@@ -1,0 +1,22 @@
+{# Task 6a cont: Closing babel type traits — emitted once after container_helpers. #}
+#ifndef __BABEL_HELPERS_LAST__
+#define __BABEL_HELPERS_LAST__
+
+namespace babel {
+
+    template < class T >  struct is_supported_container : is_supported_container_helper< std::remove_cv_t<T>> {};
+    template < class T >  struct is_fixed_container     : is_fixed_container_helper< std::remove_cv_t<T>> {};
+    template < class T >  struct is_map_container       : is_map_container_helper< std::remove_cv_t<T>> {};
+
+    using std::is_arithmetic;
+
+    template < class T >
+    using is_supported = std::conditional<
+            ( is_arithmetic<T>::value | is_supported_ptr<T>::value | is_supported_container<T>::value),
+              std::true_type, std::false_type
+        >;
+
+}
+
+
+#endif

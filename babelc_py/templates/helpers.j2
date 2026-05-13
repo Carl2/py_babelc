@@ -1,0 +1,121 @@
+{# Task 6c: Static babel::ipc helper templates — emitted once. #}
+#ifndef __HAVE_BABEL__IPC_HELPERS__
+#define __HAVE_BABEL__IPC_HELPERS__
+
+namespace babel::ipc {
+
+    //======================================================================
+    // Templates for providing a value view of an array
+    //
+    template<std::size_t N, typename Enum, std::size_t... Indices> 
+    inline auto ArrayValue( const std::array<std::enable_if_t<std::is_enum<Enum>::value,Enum>,N>& theArray, std::index_sequence< Indices...>&& ) {
+        static_assert( sizeof(theArray)   == sizeof(std::array<std::underlying_type_t<Enum>,N>), "Woops, something wrong with enum array size" );
+        static_assert( sizeof(theArray[0]) == sizeof(std::underlying_type_t<Enum>), "Woops, something wrong with enum size" );
+
+        return reinterpret_cast<const std::array<std::underlying_type_t<Enum>,N>&>(theArray);
+    }
+
+    template<std::size_t N, typename, std::size_t... Indices> 
+    auto ArrayValue( const std::array<std::string,N>& theArray, std::index_sequence< Indices...>&& ) {
+        return std::array<const char *, N>{ theArray[Indices].c_str()... };
+    }
+
+    template<std::size_t N, typename Boolean, std::size_t... Indices> 
+    auto ArrayValue( const std::array<bool,N>& theArray, std::index_sequence< Indices...>&& ) {
+        return std::array<Boolean, N>{ static_cast<Boolean>(theArray[Indices])... };
+    }
+
+    template <typename E, std::size_t N, typename B = int> 
+    inline auto ArrayValue( const std::array<E,N>& theArray, B = B{}) {
+        return ArrayValue<N,B>( theArray, std::make_index_sequence<N>() );
+    }
+
+    //======================================================================
+    // Templates for references of some types
+    //
+    template <typename Boolean>
+    struct BooleanReference {
+        bool    &itsValue;
+        Boolean  itsValueView;
+        BooleanReference( bool &theValue ) : itsValue{theValue},itsValueView{static_cast<Boolean>(theValue)} {}
+        ~BooleanReference() { itsValue = (itsValueView != Boolean{}); }
+        auto operator&() { return &itsValueView; }
+    };
+
+    template <typename Enum, void (*validate) ( Enum &, Enum, std::string& ) > 
+    struct EnumReference {
+        using ViewType = std::underlying_type_t<Enum>;
+        Enum        &itsValue;
+        std::string &itsErrorString;
+        ViewType     itsValueView;
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+        EnumReference( Enum &theValue, std::string &theErrorString ) : itsValue{theValue}, itsErrorString(theErrorString), itsValueView{static_cast<ViewType>(theValue)} {}
+    #pragma GCC diagnostic pop
+        ~EnumReference() { validate(itsValue, static_cast<Enum>(itsValueView), itsErrorString ); }
+        auto operator&() { return &itsValueView; }
+    };
+
+    struct StringReference {
+        std::string &itsValue;
+        const char  *itsValueView;
+        StringReference(std::string &theValue) : itsValue{theValue}, itsValueView{theValue.c_str()} {}
+        ~StringReference() { if (itsValue.c_str() != itsValueView) itsValue = itsValueView; }
+        auto operator&() { return &itsValueView; }
+    };
+
+
+    //======================================================================
+    // Templates for references to array values
+    //
+    template <typename ValueType, typename ReferenceType, std::size_t N, std::size_t... Indices>
+    struct ArrayReference {
+        std::array<ReferenceType,  N> itsArrayView;
+
+        ArrayReference( std::array<ValueType,N>& theArray ) 
+          : itsArrayView{theArray[Indices]...} {
+        }
+
+        auto operator&() { return std::array<decltype(&itsArrayView[0]),N>{&itsArrayView[Indices]...}; }
+    };
+
+    template <typename Enum, void (*validate) ( Enum &, Enum, std::string& ), std::size_t N >
+    struct EnumArrayReference {
+        using UnderlyingArrayType = std::array<std::underlying_type_t<Enum>,N>;
+        UnderlyingArrayType &itsUnderlyingArray;
+        std::string         &itsErrorString;
+
+        EnumArrayReference(std::array<Enum, N> &theArray, std::string &theErrorString )
+            : itsUnderlyingArray(reinterpret_cast<UnderlyingArrayType&>(theArray)),itsErrorString(theErrorString) {
+        }
+        auto operator &() { return &itsUnderlyingArray; }
+        ~EnumArrayReference() {
+        Enum notUsed; for (auto v : itsUnderlyingArray ) { validate( notUsed, static_cast<Enum>(v), itsErrorString ); }
+        }
+    };
+
+    template< typename ValueType, typename ReferenceType, std::size_t N, std::size_t... Indices > 
+    inline auto MakeArrayReferenceImpl( std::array<ValueType,N>& theArray, std::index_sequence<Indices...> ) {
+        return ArrayReference< ValueType, ReferenceType, N, Indices... >( theArray );
+    }
+
+    template <typename Boolean, std::size_t N, typename Indices = std::make_index_sequence<N> > 
+    inline auto MakeBooleanArrayReference( std::array<Boolean,N>& theArray ) {
+        return MakeArrayReferenceImpl< bool, BooleanReference< Boolean >>( theArray, Indices() );
+    }
+
+    template <typename Enum, void (*validate)( Enum &, Enum, std::string& ), std::size_t N >
+    inline auto MakeEnumArrayReference( std::array<Enum,N>& theArray, std::string &theErrorString ) {
+        return EnumArrayReference<Enum,validate,N>( theArray, theErrorString );
+    }
+
+    template< std::size_t N, typename Indices = std::make_index_sequence<N> > 
+    inline auto MakeStringArrayReference( std::array<std::string,N>& theArray ) {
+        return MakeArrayReferenceImpl<std::string, StringReference>( theArray, Indices() );
+    }
+
+
+}
+
+
+#endif

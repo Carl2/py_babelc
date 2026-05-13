@@ -1,0 +1,386 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: Task 4: clang_parser.py — libclang AST Walking Design
+#+FILETAGS: :clang:parser:ast:libclang:
+#+DATE: 2026-05-04
+#+AUTHOR:
+#+STARTUP: overview
+#+PRIORITIES: A B C
+
+* Problem
+
+  We need to extract a structured type model from C++ header files using
+  libclang's Python bindings. This replaces babelc's 1708-line hand-rolled
+  text parser with a proper AST walk.
+
+  The parser must extract the same information babelc extracts: structs (POD),
+  interfaces (abstract classes with pure virtual methods), enums, typedefs/using
+  aliases, container types, and babelc attributes.
+
+* What babelc Extracts
+
+  From ~babel_types.h~, babelc's type model consists of:
+
+  | Type class               | C++ construct                          | What is extracted                                     |
+  |--------------------------+----------------------------------------+-------------------------------------------------------|
+  | ~BuiltInType~            | ~std::uint8_t~, ~std::int32_t~, etc.  | Name, signedness, widening type                       |
+  | ~StdString~              | ~std::string~                          | (singleton)                                           |
+  | ~Void~                   | ~void~                                 | (singleton)                                           |
+  | ~Typedef~                | ~using X = Y~ / ~typedef Y X~         | Name, underlying type                                 |
+  | ~EnumeratedType~         | ~enum struct X : T { ... }~            | Name, underlying type, enumerator names               |
+  | ~StructType~             | ~struct X { fields... }~               | Name, fields (name, type, has-initializer)            |
+  | ~InterfaceType~          | ~struct X { virtual ... = 0; ... }~    | Name, methods (name, return type, arguments)          |
+  | ~FixedArray~             | ~std::array<T, N>~                     | Element type, size                                    |
+  | ~VaryingLengthContainer~ | ~std::vector<T>~, ~std::list<T>~       | Element type, is-consecutive (vector=yes, list=no)    |
+  | ~MapContainer~           | ~std::map<K, V>~                       | Key type, value type                                  |
+  | ~VariantType~            | ~boost::variant<Ts...>~                | Contained types, index/get method names               |
+  | ~OptionalType~           | ~boost::optional<T>~                   | Contained type                                        |
+  | ~PointerType~            | ~std::shared_ptr<T>~, ~std::unique_ptr<T>~ | Referred type, is-shared                         |
+
+  Additional data per type:
+  - Fully qualified name (including namespace)
+  - Namespace path
+  - babelc attributes (~ipc_type~, ~use_discriminated_variant~, etc.)
+
+  *Key distinction*: A struct with at least one pure virtual method becomes an
+  ~InterfaceType~. A struct with only data members becomes a ~StructType~.
+
+* libclang Cursor Kinds We Need
+
+  The ~clang.cindex~ library exposes the AST as a tree of ~Cursor~ objects.
+  The relevant cursor kinds for our extraction:
+
+  | Cursor kind                        | Maps to              | Notes                                     |
+  |------------------------------------+----------------------+-------------------------------------------|
+  | ~NAMESPACE~                        | namespace context    | Recurse into children                     |
+  | ~STRUCT_DECL~ / ~CLASS_DECL~       | StructType or InterfaceType | Inspect children for fields vs methods |
+  | ~ENUM_DECL~                        | EnumType             | Children are ~ENUM_CONSTANT_DECL~         |
+  | ~TYPEDEF_DECL~                     | TypedefType          | ~cursor.underlying_typedef_type~          |
+  | ~TYPE_ALIAS_DECL~                  | TypedefType          | ~using X = Y~ (C++11 alias)               |
+  | ~FIELD_DECL~                       | StructType.Field     | ~cursor.type~ gives the field type        |
+  | ~CXX_METHOD~                       | InterfaceType.Method | Check ~cursor.is_pure_virtual_method()~   |
+  | ~ENUM_CONSTANT_DECL~              | Enumerator value     | ~cursor.enum_value~                       |
+  | ~ANNOTATE_ATTR~                    | babelc attribute     | From pre_process.py rewrite               |
+  | ~CXX_BASE_SPECIFIER~              | (ignored)            | babelc doesn't support inheritance        |
+  | ~CONSTRUCTOR~ / ~DESTRUCTOR~       | (counted, not stored)| Used to distinguish struct vs interface   |
+
+* Type Resolution Strategy
+
+  libclang's ~cursor.type~ returns a ~Type~ object. We need to resolve
+  template specialisations to identify containers. Strategy:
+
+  #+begin_src text
+  Given a clang Type:
+    1. Get the canonical type spelling
+    2. If it starts with "std::vector<"  → VaryingLengthContainer (consecutive=True)
+    3. If it starts with "std::list<"    → VaryingLengthContainer (consecutive=False)
+    4. If it starts with "std::array<"   → FixedArray (extract size from template arg)
+    5. If it starts with "std::map<"     → MapContainer
+    6. If it starts with "std::shared_ptr<" → PointerType (shared=True)
+    7. If it starts with "std::unique_ptr<" → PointerType (shared=False)
+    8. If it starts with "boost::variant<" or "std::variant<" → VariantType
+    9. If it starts with "boost::optional<" or "std::optional<" → OptionalType
+   10. If it starts with "std::string"   → StdString
+   11. If it is a builtin int type       → BuiltinType
+   12. If it resolves to a known enum    → reference to that EnumType
+   13. If it resolves to a known struct  → reference to that StructType
+   14. Otherwise                         → error
+  #+end_src
+
+  For template types, libclang provides ~type.get_num_template_arguments()~ and
+  ~type.get_template_argument_type(i)~ to extract template parameters.
+
+  For ~std::array~, the size is a non-type template parameter. libclang's Python
+  bindings don't directly expose non-type template args. We'll extract the size
+  from the type spelling string (e.g. ~std::array<uint8_t, 20>~ → size=20).
+
+* Namespace Handling
+
+  babelc uses fully qualified names (e.g. ~::addressbook::v1::Person~) everywhere
+  in the generated output. libclang gives us this via:
+  - Walking ~NAMESPACE~ cursors and tracking the path
+  - Or using ~cursor.type.spelling~ which often includes the full qualification
+
+  We track the namespace stack during AST traversal and compose qualified names.
+
+* Attribute Extraction
+
+  After the pre_process.py rewrite, babelc attributes appear as:
+  ~[[clang::annotate("babelc::ipc_type=FileDescriptor")]]~
+
+  In the AST these show up as child cursors of kind ~ANNOTATE_ATTR~.
+  The annotation string is accessible via ~cursor.displayname~ or ~cursor.spelling~.
+
+  Parsing the annotation string:
+  #+begin_src python
+  def parse_babelc_annotation(annotation: str) -> Maybe:
+      """Parse 'babelc::name=value' or 'babelc::name' into (name, value|None)."""
+      if not annotation.startswith("babelc::"):
+          return Nothing
+      rest = annotation[len("babelc::"):]
+      if "=" in rest:
+          name, value = rest.split("=", 1)
+          return Just((name, value))
+      else:
+          return Just((rest, None))
+  #+end_src
+
+* Interface Detection Logic
+
+  A ~STRUCT_DECL~ / ~CLASS_DECL~ is classified as:
+
+  - *InterfaceType* if it has at least one child cursor of kind ~CXX_METHOD~
+    where ~cursor.is_pure_virtual_method()~ is ~True~.
+  - *StructType* if it has only ~FIELD_DECL~ children (plus optional
+    constructor/destructor).
+  - Structs with *no fields* are valid (~Vacuous~ structs in babelc).
+
+  babelc also requires:
+  - Methods must be pure virtual (~= 0~)
+  - Methods must be non-const
+  - Methods must return by value (not by pointer/reference)
+  - Arguments must be by value or by const reference
+
+  We validate these in the validation step (Task 5), not during parsing.
+
+* Function Signatures (Railway-Oriented)
+
+** ~parse_with_clang(ctx) -> Maybe~
+
+   Reads ~ctx["rewritten_header_path"]~ (from pre_process.py) and
+   ~ctx["clang_args"]~. Creates a libclang ~Index~ and parses the
+   translation unit.
+
+   On success, adds ~ctx["translation_unit"]~ (the clang TU object) and
+   ~ctx["index"]~ (kept alive for TU lifetime).
+
+   On failure (parse errors, file not found), returns
+   ~Maybe(value="error", monoid=False)~.
+
+   #+begin_src python
+   def parse_with_clang(ctx: dict) -> Maybe:
+       try:
+           index = clang.cindex.Index.create()
+           tu = index.parse(
+               ctx["rewritten_header_path"],
+               args=["-std=c++20", "-x", "c++"] + ctx.get("clang_args", []),
+               options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+                     | clang.cindex.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES,
+           )
+           # Check for fatal errors
+           errors = [d for d in tu.diagnostics
+                     if d.severity >= clang.cindex.Diagnostic.Error]
+           if errors:
+               msg = "; ".join(str(e) for e in errors)
+               return Maybe(value=f"Clang parse errors: {msg}", monoid=False)
+           return Just({**ctx, "translation_unit": tu, "index": index})
+       except Exception as e:
+           return Maybe(value=f"Failed to parse: {e}", monoid=False)
+   #+end_src
+
+** ~extract_type_model(ctx) -> Maybe~
+
+   Walks the AST from ~ctx["translation_unit"]~ cursor. Builds a
+   ~CompilationUnit~ dataclass (from Task 3's ~type_model.py~).
+
+   This is the main extraction function. It:
+   1. Recursively walks ~NAMESPACE~ cursors, tracking the namespace stack.
+   2. For each ~STRUCT_DECL~ / ~CLASS_DECL~: classifies as StructType or
+      InterfaceType by inspecting children.
+   3. For each ~ENUM_DECL~: extracts enumerators and underlying type.
+   4. For each ~TYPEDEF_DECL~ / ~TYPE_ALIAS_DECL~: resolves the underlying type.
+   5. Collects ~ANNOTATE_ATTR~ children and attaches attributes to parent types.
+   6. Only processes cursors from the *main file* (skips system includes).
+
+   #+begin_src python
+   def extract_type_model(ctx: dict) -> Maybe:
+       """Walk clang AST and build CompilationUnit."""
+       tu = ctx["translation_unit"]
+       main_file = tu.spelling
+
+       def do_extract(cursor, namespace_stack):
+           ...
+
+       return (
+           Just({"cursor": tu.cursor, "namespace": ()})
+           .bind(do_extract_all_types)
+           .map(lambda types: {**ctx, "compilation_unit": types})
+       )
+   #+end_src
+
+** Helper: ~resolve_type(clang_type, known_types) -> Maybe~
+
+   Curried function that resolves a libclang ~Type~ to our type model.
+   Uses the strategy described in "Type Resolution Strategy" above.
+
+   #+begin_src python
+   def resolve_type(known_types: dict):
+       """Curried: captures known_types registry, returns bind-compatible fn."""
+       def do_resolve_type(clang_type) -> Maybe:
+           spelling = clang_type.spelling
+           canonical = clang_type.get_canonical().spelling
+           # ... pattern match on spelling to identify containers, builtins, etc.
+           ...
+       return do_resolve_type
+   #+end_src
+
+* File Filtering
+
+  libclang parses *everything* the TU includes (all of ~<cstdint>~, ~<string>~,
+  ~<vector>~, etc.). We must filter to only extract types from the *input header
+  file* and files it directly includes (not system headers).
+
+  Strategy:
+  - Check ~cursor.location.file~ against the input file path
+  - Use ~cursor.location.file.name~ to match
+  - For files included by the input header (e.g. ~addressbook.h~ includes
+    ~<cstdint>~), we still skip them — babelc knows ~std::uint8_t~ etc. as
+    built-in types, not from parsing the actual ~<cstdint>~ header
+
+* Ordering
+
+  The generated output requires types in dependency order (a struct's field types
+  must be declared before the struct itself). babelc handles this via
+  ~getItsReferredTypes()~ which traverses the type graph.
+
+  Our approach: after extraction, topologically sort the ~CompilationUnit~ types
+  by their dependency relationships. This is a post-processing step in
+  ~extract_type_model~ before returning.
+
+* Built-in Types (Hardcoded)
+
+  Like babelc, we hardcode the known built-in types rather than discovering them
+  from the AST. These are the stdint types and a few others:
+
+  #+begin_src python
+  BUILTIN_TYPES = {
+      "std::uint8_t":  BuiltinType(name="std::uint8_t",  signed=False, widening_type="unsigned"),
+      "std::uint16_t": BuiltinType(name="std::uint16_t", signed=False, widening_type="unsigned"),
+      "std::uint32_t": BuiltinType(name="std::uint32_t", signed=False, widening_type=""),
+      "std::uint64_t": BuiltinType(name="std::uint64_t", signed=False, widening_type=""),
+      "std::int8_t":   BuiltinType(name="std::int8_t",   signed=True,  widening_type="int"),
+      "std::int16_t":  BuiltinType(name="std::int16_t",  signed=True,  widening_type="int"),
+      "std::int32_t":  BuiltinType(name="std::int32_t",  signed=True,  widening_type=""),
+      "std::int64_t":  BuiltinType(name="std::int64_t",  signed=True,  widening_type=""),
+      "bool":          BuiltinType(name="bool",           signed=False, widening_type=""),
+      "float":         BuiltinType(name="float",          signed=True,  widening_type=""),
+      "double":        BuiltinType(name="double",         signed=True,  widening_type=""),
+  }
+  #+end_src
+
+  When resolving a type, if the canonical spelling maps to a known built-in,
+  we return the pre-existing instance rather than creating a new type.
+
+* Test Strategy
+
+  Test with ~addressbook.h~ as primary fixture:
+
+  | Test                         | What is verified                                        |
+  |------------------------------+---------------------------------------------------------|
+  | Parse succeeds               | ~parse_with_clang~ returns ~Just~ for valid header      |
+  | Namespace extraction         | ~addressbook::v1~ namespace found                       |
+  | Enum extraction              | ~Sex~ enum with 4 enumerators, underlying ~uint8_t~     |
+  | Typedef extraction           | ~PhoneNumber~ = ~uint64_t~, ~PhoneNumbers~ = ~vector<PhoneNumber>~ |
+  | Struct extraction            | ~Person~ with 3 fields (name, sex, phoneNumbers)        |
+  | Interface extraction         | ~Server~ with 1 method (~add~, takes ~const Person&~)   |
+  | Pointer type extraction      | ~ServerPtr~ = ~shared_ptr<Server>~                      |
+  | File filtering               | No types from ~<cstdint>~, ~<string>~, etc.             |
+  | Attribute extraction         | (requires test_types.h fixture with babelc attrs)       |
+  | Parse error                  | Returns ~is_nothing()~ for invalid file                 |
+
+  Additional fixture: copy ~test_types.h~ from babelc to test attribute
+  extraction and the full range of container types.
+
+* Edge Cases & Risks
+
+  1. *libclang version differences*: ~get_num_template_arguments()~ and
+     ~get_template_argument_type()~ may behave differently across versions.
+     The ~libclang~ pip package bundles its own ~libclang.so~, which mitigates
+     this.
+
+  2. *std::array size extraction*: Non-type template args are not exposed by
+     the Python bindings. Fallback: regex on ~type.spelling~ to extract the
+     integer. Fragile but sufficient for ~std::array<T, N>~.
+
+  3. *boost::variant/optional*: These are not in libclang's standard knowledge.
+     They show up as class template specializations. We identify them by the
+     template name from the spelling.
+
+  4. *Typedef chains*: ~using PhoneNumber = std::uint64_t~ then
+     ~using PhoneNumbers = std::vector<PhoneNumber>~. libclang resolves the
+     canonical type, but we want to preserve the typedef names for the generated
+     output. We must track both the typedef name and the resolved type.
+
+  5. *Multiple translation units*: Not needed — babelc processes one header at
+     a time.
+
+* Implementation Notes
+
+  Design decisions made before implementation:
+
+  1. *~BuiltinType~ stays minimal* — The ~BUILTIN_TYPES~ lookup dict in the
+     parser carries ~signed~ and ~widening_type~ information internally, but
+     these are /not/ stored in the ~type_model.BuiltinType~ dataclass (which
+     has only ~name~). This is consistent with Task 3 design decision #5:
+     "BuiltinType is minimal — it exists mainly as a sentinel/lookup set."
+     Generation-time properties belong in the generator, not the model.
+
+  2. *Map handling deferred* — ~ContainerType~ has ~element_type~ (single
+     string) but no ~key_type~ field. The ~addressbook.h~ fixture does not use
+     ~std::map~, and no test fixture currently exercises it. Map support will
+     be added when a production header requires it.
+
+  3. *Aliases produce dual entries* — A ~using~ declaration that resolves to a
+     container, pointer, or variant (e.g. ~using PhoneNumbers = std::vector<PhoneNumber>~)
+     produces /both/ an ~AliasType~ (preserving the alias name and target
+     spelling) /and/ the resolved type (~ContainerType~, ~PointerType~, or
+     ~VariantType~) in the ~CompilationUnit~. This lets the generator reference
+     either the alias name or the resolved structure as needed.
+
+  4. *File filtering* — Only cursors whose ~cursor.location.file.name~ matches
+     the main input file are processed. System includes (~<cstdint>~, etc.)
+     are skipped; built-in types are recognised from the hardcoded lookup dict.
+
+  5. *Namespace tracking* — A namespace stack is maintained during recursive
+     AST traversal. Qualified names are composed as ~"ns1::ns2::TypeName"~.
+
+* Dependencies
+
+  - Task 2 (~pre_process.py~) must be complete — the parser reads the rewritten
+    header.
+  - Task 3 (~type_model.py~) must be complete — the parser populates dataclasses
+    defined there.
+
+* Subtasks [5/5]
+
+** DONE Implement ~parse_with_clang~ — TU creation and error checking
+   CLOSED: [2026-05-04]
+   Create the libclang Index, parse the file, check diagnostics.
+   Returns ~Just(ctx)~ with ~translation_unit~ and ~index~ keys.
+   Also added ~discover_system_cpp_includes()~ helper to handle
+   pip-installed libclang's broken GCC header resolution.
+
+** DONE Implement ~extract_type_model~ — main AST walk
+   CLOSED: [2026-05-04]
+   Recursive cursor visitor. File filtering. Namespace tracking.
+   Dispatches to type-specific extractors based on cursor kind.
+
+** DONE Implement type-specific extractors
+   CLOSED: [2026-05-04]
+   - ~_extract_enum~ — enumerators, underlying type, attributes
+   - ~_extract_struct_or_interface~ — classify, extract fields or methods
+   - ~_extract_alias~ — resolve underlying type
+   - ~_resolve_container~ — map type spelling to ContainerType/PointerType/VariantType
+
+** DONE Implement dependency ordering
+   CLOSED: [2026-05-04]
+   Topological sort of types by their field/argument type references.
+   Handles cycles by breaking them arbitrarily.
+
+** DONE Implement ~tests/test_clang_parser.py~
+   CLOSED: [2026-05-04]
+   25 tests against ~addressbook.h~ fixture covering:
+   parse success/failure, annotations, container resolution,
+   template arg splitting, enum/struct/interface/alias extraction,
+   namespace extraction, file filtering, dependency ordering.

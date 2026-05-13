@@ -1,0 +1,19 @@
+{# Task 6a: Static babel type trait helpers — emitted once. #}
+#ifndef __BABEL_HELPERS_FIRST__
+#define __BABEL_HELPERS_FIRST__
+
+namespace babel {
+
+    template < class T > struct is_supported_ptr_helper                     : std::false_type {};
+    template < class T > struct is_supported_ptr_helper<std::shared_ptr<T>> : std::true_type {};
+    template < class T > struct is_supported_ptr_helper<std::unique_ptr<T>> : std::true_type {};
+    template < class T > struct is_supported_ptr                            : is_supported_ptr_helper< std::remove_cv_t<T> > {};
+
+    template < class T > struct is_supported_container_helper               : std::false_type {};
+    template < class T > struct is_map_container_helper                     : std::false_type {};
+    template < class T > struct is_fixed_container_helper                   : std::false_type {};
+
+}
+
+
+#endif

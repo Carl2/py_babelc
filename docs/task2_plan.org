@@ -1,0 +1,184 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: Task 2: pre_process.py — Attribute Rewriter Design
+#+FILETAGS: :pre-process:attributes:regex:
+#+DATE: 2026-05-04
+#+AUTHOR:
+#+STARTUP: overview
+#+PRIORITIES: A B C
+
+* Problem
+
+  libclang does not recognise ~[[babelc::X]]~ as a meaningful attribute — it is
+  a vendor-specific attribute namespace unknown to Clang. These attributes are
+  silently ignored or produce warnings, and *do not* appear as ~AnnotateAttr~
+  nodes in the AST.
+
+  Clang /does/ support ~[[clang::annotate("string")]]~, which produces a
+  properly accessible ~AnnotateAttr~ node. We need a pre-pass that rewrites the
+  babelc attribute syntax into clang annotate syntax before feeding the header to
+  libclang.
+
+* Known Attribute Forms
+
+  Exhaustive list from the babelc codebase and test headers:
+
+  | Form                                               | Example source file          | Has argument? |
+  |----------------------------------------------------+------------------------------+---------------|
+   | ~[[babelc::ipc_type("FileDescriptor")]]~           | ~tests/test_types.h:97~     | Yes (string)  |
+   | ~[[babelc::use_discriminated_variant]]~             | ~tests/test_types.h:269~    | No            |
+   | ~[[babelc::intentionally_incomplete_variant]]~      | ~tests/jsontest.h:76~       | No            |
+   | ~[[babelc::interface_name("org.freedesktop.DBus")]]~ | ~lib-ocpcommon dbus.h:21~  | Yes (string)  |
+
+   *Placement patterns:*
+   - After an enum declaration: ~enum struct FD : std::int32_t [[babelc::ipc_type("FileDescriptor")]] {};~
+   - After a using/typedef: ~using Event = boost::variant<...> [[babelc::use_discriminated_variant]];~
+   - After a using alias: ~using FileDescriptor = FD [[babelc::ipc_type("FileDescriptor")]];~
+   - After a class/struct closing brace: ~} [[babelc::interface_name("com.volvo.ocp...")]];~
+
+  Note: attributes can appear on the *same line* as the type declaration, or on
+  a *separate line* (e.g. when a multi-line variant ends with ~>~ on one line
+  and the attribute on the next).
+
+* Proposed Rewrite Rules
+
+  The rewriter converts attribute syntax as follows:
+
+  | Input                                          | Output                                                         |
+  |------------------------------------------------+----------------------------------------------------------------|
+  | ~[[babelc::name("value")]]~                    | ~[[clang::annotate("babelc::name=value")]]~                    |
+  | ~[[babelc::name]]~                             | ~[[clang::annotate("babelc::name")]]~                          |
+
+  Key properties:
+  - The attribute name (~ipc_type~, ~use_discriminated_variant~, etc.) is preserved verbatim.
+  - For attributes with a string argument, the quotes around the value are stripped
+    in the annotate string (they become part of the annotation value, not syntax).
+  - For attributes without arguments, just the name is stored.
+  - The rewriter is *text-level* — it operates on the raw header source before
+    any parsing. It does not need to understand C++ syntax beyond the attribute brackets.
+
+* Regex Design
+
+  A single regex handles both forms:
+
+  #+begin_src python
+  import re
+
+  BABELC_ATTR_RE = re.compile(
+      r'\[\[babelc::'        # opening [[ and namespace
+      r'(\w+)'               # capture group 1: attribute name
+      r'(?:\("([^"]*)"\))?'  # optional: capture group 2: string argument (without quotes)
+      r'\]\]'                # closing ]]
+  )
+  #+end_src
+
+  Replacement logic:
+
+  #+begin_src python
+  def _replace_attr(match: re.Match) -> str:
+      name = match.group(1)
+      value = match.group(2)
+      if value is not None:
+          return f'[[clang::annotate("babelc::{name}={value}")]]'
+      else:
+          return f'[[clang::annotate("babelc::{name}")]]'
+  #+end_src
+
+* Function Signature (Railway-Oriented)
+
+  #+begin_src python
+  def rewrite_babelc_attributes(ctx: dict) -> Maybe:
+      """Rewrite [[babelc::X]] attributes to [[clang::annotate(...)]].
+
+      Reads ctx["header_path"], writes a temp file with rewritten content.
+      Adds ctx["rewritten_header_path"] pointing to the temp file.
+      Returns Just(ctx) on success, Maybe(value=error, monoid=False) on failure.
+      """
+  #+end_src
+
+  Pipeline position:
+  #+begin_src python
+  Just({"header_path": path, "clang_args": args, "output_path": out})
+      .bind(rewrite_babelc_attributes)   # <-- this step
+      .bind(parse_with_clang)
+      ...
+  #+end_src
+
+  The function:
+  1. Reads the file at ~ctx["header_path"]~.
+  2. Applies ~BABELC_ATTR_RE.sub(_replace_attr, content)~.
+  3. If no attributes were found, sets ~ctx["rewritten_header_path"]~ to the
+     original path (no temp file needed).
+  4. If attributes were rewritten, writes a temporary file (using ~tempfile~)
+     and sets ~ctx["rewritten_header_path"]~ to the temp path.
+  5. Returns ~Just(ctx)~ or ~Maybe(value="error reading ...", monoid=False)~.
+
+* Temp File Strategy
+
+  The temp file must be in a location where libclang can resolve ~#include~
+  directives relative to the original header. Two options:
+
+  - *Option A*: Write the temp file in the same directory as the original header,
+    with a dotfile name (e.g. ~.addressbook.babelc_rewritten.h~). Clean up after
+    libclang parsing is done.
+  - *Option B*: Write to ~/tmp~ and pass ~-I <original_dir>~ as an extra clang
+    arg so includes still resolve.
+
+  *Recommendation: Option B.* It avoids polluting the source directory. The
+  original header's directory is added to ~ctx["clang_args"]~ as ~-I~
+  automatically.
+
+* Edge Cases
+
+  1. *No attributes present*: Pass-through, no temp file. The function should
+     still succeed (return ~Just~).
+  2. *Multiple attributes on same declaration*: Each ~[[babelc::X]]~ is a
+     separate match — the regex handles them independently. babelc's own parser
+     handles them as comma-separated within a single ~[[...]]~ block, but the
+     test headers always use separate ~[[...]]~ blocks.
+  3. *Attributes spanning multiple lines*: Not observed in the codebase. The
+     attribute is always on a single line. The regex operates line-agnostically
+     anyway (~re.sub~ on the full file content).
+  4. *Attribute inside a comment or string literal*: Unlikely in practice (not
+     observed). Not worth handling for the initial implementation.
+  5. *File read error*: Return ~Maybe(value="...", monoid=False)~.
+
+* Test Cases
+
+  | Test                                 | Input                                                                              | Expected output                                                                         |
+  |--------------------------------------+------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------|
+  | Attr with string arg                 | ~[[babelc::ipc_type("FileDescriptor")]]~                                           | ~[[clang::annotate("babelc::ipc_type=FileDescriptor")]]~                                |
+  | Attr without arg                     | ~[[babelc::use_discriminated_variant]]~                                            | ~[[clang::annotate("babelc::use_discriminated_variant")]]~                              |
+  | Attr without arg (incomplete)        | ~[[babelc::intentionally_incomplete_variant]]~                                     | ~[[clang::annotate("babelc::intentionally_incomplete_variant")]]~                       |
+  | No attributes                        | ~struct Foo { int x; };~                                                           | unchanged                                                                               |
+  | Multiple attrs on separate lines     | two ~[[babelc::...]]~ on different lines                                           | both rewritten independently                                                            |
+  | Attr in enum context                 | ~enum struct FD : std::int32_t [[babelc::ipc_type("FileDescriptor")]] {};~         | ~enum struct FD : std::int32_t [[clang::annotate("babelc::ipc_type=FileDescriptor")]] {};~ |
+  | Attr in using context                | ~using Event = boost::variant<...> [[babelc::use_discriminated_variant]];~          | ~using Event = boost::variant<...> [[clang::annotate("babelc::use_discriminated_variant")]];~ |
+  | Full file (addressbook.h)            | No babelc attrs → pass-through                                                    | identical content, no temp file                                                         |
+  | Full file (test_types.h)             | Multiple attrs across file                                                         | all rewritten                                                                           |
+  | Pipeline integration                 | ~Just({"header_path": "..."}).bind(rewrite_babelc_attributes)~                     | ~is_just()~ with ~rewritten_header_path~ key                                            |
+  | File not found                       | ~ctx["header_path"]~ = nonexistent                                                 | ~is_nothing()~ with error message                                                       |
+
+* Subtasks [3/3]
+
+** DONE Implement ~rewrite_babelc_attributes~ in ~pre_process.py~
+   CLOSED: [2026-05-04]
+   The regex, replacement function, temp file handling, and ~Maybe~ wrapping.
+
+** DONE Implement ~tests/test_pre_process.py~
+   CLOSED: [2026-05-04]
+   14 tests covering: regex (7 cases), pipeline step (7 cases including
+   pass-through, temp file creation, -I flag injection, context immutability,
+   file-not-found error, .bind() integration, addressbook.h full-file).
+
+** DONE Verify with real headers
+   CLOSED: [2026-05-04]
+   Tested against 6 real headers from ~~/tmp/release/repos~:
+   - ~stream.h~ (1 ~ipc_type~ attr)
+   - ~dataset_types.h~ (1 ~use_discriminated_variant~ attr)
+   - ~dbus.h~ (2 ~interface_name~ attrs — newly discovered form)
+   - ~bos_connection.h~ (1 ~interface_name~ attr)
+   - ~ehorizon_types.hpp~ (3 ~use_discriminated_variant~ attrs)
+   - ~wellknown.hpp~ (0 attrs — pass-through)
+   All rewrites correct, zero remaining ~[[babelc::~ after processing.

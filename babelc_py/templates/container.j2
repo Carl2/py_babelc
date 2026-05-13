@@ -1,0 +1,71 @@
+{# Task 8: Container (varying-length) IPC — declaration and implementation. #}
+{# Context: cont (ContainerType), with resolved element info from ipc_generator #}
+{% macro declaration(cont) %}
+#ifndef __HAVE_BABEL__IPC__{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+#define __HAVE_BABEL__IPC__{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+
+{{ cont|ns_open }}
+
+    template <typename Boolean,typename IpcPolicy>
+    using {{ cont.name }}_ArrayView = std::array<{{ cont.element_type_qualified }},1>;
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theVaryingLengthContainer );
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theVaryingLengthContainer );
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro implementation(cont) %}
+#ifndef __HAVE_BABEL__IPC__{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+#define __HAVE_BABEL__IPC__{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+
+{{ cont|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theVaryingLengthContainer ) {
+{% if cont.is_simple_element %}
+        const {{ cont|qualified }}::value_type *theValues     = nullptr;
+        {{ cont|qualified }}::size_type         theNoOfValues = 0;
+
+        IpcPolicy::getMessageArray( theMessage, theValues, theNoOfValues );
+
+{% if cont.container_kind == "vector" %}
+        theVaryingLengthContainer.assign( theValues, (theValues+theNoOfValues) );
+{% else %}
+        theVaryingLengthContainer.assign( theValues, theValues+theNoOfValues );
+{% endif %}
+{% else %}
+        typename IpcPolicy::template ReadContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, true );
+        while (theContainer.hasMore()) {
+            {{ cont|qualified }}::value_type theElement{};
+            {{ cont.element_read_expr }}
+            theVaryingLengthContainer.push_back( std::move(theElement) );
+        }
+{% endif %}
+    }
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theVaryingLengthContainer ) {
+{% if cont.is_simple_element %}
+        IpcPolicy::appendMessageArray(
+            theMessage,
+            &theVaryingLengthContainer.front(),
+            theVaryingLengthContainer.size()
+        );
+{% else %}
+        typename IpcPolicy::template WriteContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, theVaryingLengthContainer.size() );
+        for (const auto &theElement : theVaryingLengthContainer) {
+            {{ cont.element_write_expr }}
+        }
+{% endif %}
+    }
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}

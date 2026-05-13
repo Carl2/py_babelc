@@ -1,0 +1,79 @@
+{# Task 9: Struct IPC — _TupleView typedef, IpcReadContainer, IpcWriteContainer. #}
+{# Context: struct (StructType) with enriched fields from ipc_generator #}
+{% macro declaration(struct) %}
+#ifndef __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+#define __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+
+{{ struct|ns_open }}
+
+    template <typename Boolean,typename IpcPolicy>
+    using {{ struct.name }}_TupleView = std::tuple< 
+        {% for field in struct.fields_enriched %}
+            {{ field.wire_type }}{{ "," if not loop.last }}
+        {% endfor %}
+        >;
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ struct|qualified }} &theStruct );
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ struct|qualified }} &theStruct );
+
+{{ struct|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro implementation(struct) %}
+#ifndef __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+#define __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+
+{{ struct|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ struct|qualified }} &theStruct ) {
+        typename IpcPolicy::template ReadContainerScope<{{ struct|qualified }}_TupleView<Boolean,IpcPolicy>> theContainer( theMessage, false );
+{% if struct.has_enum_fields %}
+
+        std::string theErrorString;
+{% endif %}
+{% if struct.simple_read_fields %}
+
+        IpcPolicy::getMessageArguments(
+            theMessage,
+            {% for field in struct.simple_read_fields %}
+            {{ field.read_expr }}{{ "," if not loop.last }}
+            {% endfor %}
+        );
+{% endif %}
+{% for field in struct.complicated_read_fields %}
+        {{ field.read_expr }}
+{% endfor %}
+{% if struct.has_enum_fields %}
+
+        if (!theErrorString.empty()) { throw std::invalid_argument( theErrorString ); };
+{% endif %}
+    }
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ struct|qualified }} &theStruct ) {
+        typename IpcPolicy::template WriteContainerScope<{{ struct|qualified }}_TupleView<Boolean,IpcPolicy>> theContainer( theMessage );
+{% if struct.simple_write_fields %}
+
+        IpcPolicy::appendMessageArguments(
+            theMessage,
+            {% for field in struct.simple_write_fields %}
+            {{ field.write_expr }}{{ "," if not loop.last }}
+            {% endfor %}
+        );
+{% endif %}
+{% for field in struct.complicated_write_fields %}
+        {{ field.write_expr }}
+{% endfor %}
+
+    }
+
+{{ struct|ns_close }}
+
+
+#endif
+{% endmacro %}

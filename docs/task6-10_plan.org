@@ -1,0 +1,633 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: Tasks 6–10: Jinja2 Templates & IPC Generator Design
+#+FILETAGS: :jinja2:templates:codegen:ipc:
+#+DATE: 2026-05-04
+#+AUTHOR:
+#+STARTUP: overview
+#+PRIORITIES: A B C
+
+* Overview
+
+  Tasks 6–10 cover all Jinja2 template authoring and the orchestration layer.
+  They are grouped into one design document because the templates are tightly
+  interdependent — each template relies on naming conventions, helper macros,
+  and type-mapping functions shared across the set.
+
+  The generated output targets C++20. All ~#if __cplusplus < 201700L~ guards
+  from babelc's output are dropped; we always emit nested namespace syntax
+  (~namespace a::b::c {~).
+
+* Template File Map
+
+  | Template file            | Task | Emitted once or per-type? | Content                                       |
+  |--------------------------+------+---------------------------+-----------------------------------------------|
+  | ~ipc_header.h.j2~        |   10 | Once (top-level)          | Include guard, includes, orchestrates all      |
+  | ~babel_helpers.j2~        |    6 | Once (guarded)            | ~babel::is_supported_ptr~ etc.                 |
+  | ~helpers.j2~              |    6 | Once (guarded)            | ~babel::ipc::~ reference/array templates       |
+  | ~container_helpers.j2~    |    6 | Per container kind used   | ~is_supported_container_helper~ specialisation |
+  | ~enum.j2~                 |    7 | Per enum type             | ~IpcEnumValidate~ decl + impl                 |
+  | ~container.j2~            |    8 | Per varying-length cont.  | ~_ArrayView~, ~IpcRead/WriteContainer~         |
+  | ~struct.j2~               |    9 | Per struct type           | ~_TupleView~, ~IpcRead/WriteContainer~         |
+  | ~interface.j2~            |   10 | Per interface type        | All proxy classes + registration functions     |
+
+* Simplification: C++20
+
+  Since we target C++20:
+  - No ~#if __cplusplus < 201700L~ / ~#else~ guards
+  - Always use ~namespace a::b::c {~ / ~}~ (single closing brace)
+  - This removes ~50% of the boilerplate lines from babelc's output
+
+* Jinja2 Environment & Conventions
+
+  Configured in ~ipc_generator.py~:
+
+  #+begin_src python
+  env = jinja2.Environment(
+      loader=jinja2.PackageLoader("babelc_py", "templates"),
+      keep_trailing_newline=True,
+      trim_blocks=True,
+      lstrip_blocks=True,
+  )
+  #+end_src
+
+** Template Variables (global context)
+
+   Every template receives these via the render context:
+
+   | Variable              | Type                    | Description                                      |
+   |-----------------------+-------------------------+--------------------------------------------------|
+   | ~header_path~         | ~str~                   | Absolute path to the original input header        |
+   | ~guard_name~          | ~str~                   | Include guard macro (derived from output path)    |
+   | ~enums~               | ~list[EnumType]~        | All enum types in dependency order                |
+   | ~structs~             | ~list[StructType]~      | All struct types in dependency order              |
+   | ~containers~          | ~list[ContainerInfo]~   | All varying-length containers needing IPC helpers |
+   | ~interfaces~          | ~list[InterfaceType]~   | All interface types                               |
+   | ~container_kinds_used~ | ~set[str]~             | e.g. ~{"std::vector", "std::list"}~               |
+   | ~typedefs~            | ~list[TypedefType]~     | For resolving names                               |
+
+** Jinja2 Custom Filters (registered on env)
+
+   These encapsulate the type-mapping logic from babelc's ~asIpcValueTypeName~,
+   ~asIpcTemplateTypeName~, etc.:
+
+   | Filter name           | Input                  | Output                                        | Example                                           |
+   |-----------------------+------------------------+-----------------------------------------------+---------------------------------------------------|
+   | ~ipc_value_type~      | CppType                | Wire-format type name                          | ~std::string~ → ~const char *~                    |
+   | ~ipc_template_type~   | CppType                | Template arg type for TupleView/ArrayView      | ~StructType~ → ~Person_TupleView<Boolean,IpcPolicy>~ |
+   | ~qualified~           | CppType                | ~::ns1::ns2::Name~                             | ~Person~ → ~::addressbook::v1::Person~            |
+   | ~simple_name~         | CppType                | Unqualified name                               | ~::addressbook::v1::Server~ → ~Server~            |
+   | ~dbus_interface_name~ | InterfaceType          | Dotted D-Bus interface name                    | ~addressbook::v1::Server~ → ~addressbook.v1.Server~ |
+   | ~ns_open~             | CppType                | ~namespace addressbook::v1 {~                  |                                                   |
+   | ~ns_close~            | CppType                | ~}~                                            |                                                   |
+   | ~guard_macro~         | str                    | ~__HAVE_...__~ style include guard             |                                                   |
+   | ~read_expr~           | StructField            | Expression for reading this field from message | Enum → ~&babel::ipc::EnumReference<...>(...)~     |
+   | ~write_expr~          | StructField            | Expression for writing this field to message   | Enum → ~static_cast<uint8_t>(theStruct.field)~    |
+
+* Task 6: Static Helpers (~babel_helpers.j2~ + ~helpers.j2~ + ~container_helpers.j2~)
+
+** ~babel_helpers.j2~ — Type Trait Helpers
+
+   Emitted once, guarded by ~__BABEL_HELPERS_FIRST__~ and ~__BABEL_HELPERS_LAST__~.
+
+   Contains:
+   - ~babel::is_supported_ptr_helper~ (specialised for ~shared_ptr~, ~unique_ptr~)
+   - ~babel::is_supported_container_helper~ (base false_type)
+   - ~babel::is_map_container_helper~ (base false_type)
+   - ~babel::is_fixed_container_helper~ (base false_type)
+   - ~babel::is_supported_container~, ~is_fixed_container~, ~is_map_container~
+   - ~babel::is_supported~ conditional type
+
+   This is *static boilerplate* — no per-type variation. Copy verbatim from
+   reference output, stripped of the C++17 guards.
+
+** ~container_helpers.j2~ — Per-Container-Kind Specialisations
+
+   Emitted once per container kind used (e.g. ~std::vector~, ~std::list~,
+   ~std::array~, ~std::map~). Each is guarded:
+
+   #+begin_src c++
+   #ifndef __BABEL_HELPERS_STD__VECTOR__
+   #define __BABEL_HELPERS_STD__VECTOR__
+   #include <vector>
+   namespace babel {
+       template <class T> struct is_supported_container_helper<std::vector<T>> : std::true_type {};
+   }
+   #endif
+   #+end_src
+
+   The template iterates over ~container_kinds_used~ and emits the appropriate
+   specialisation + include for each.
+
+** ~helpers.j2~ — ~babel::ipc~ Helper Templates
+
+   Emitted once, guarded by ~__HAVE_BABEL__IPC_HELPERS__~.
+
+   Contains all the reference/array helper templates:
+   - ~ArrayValue~ (4 overloads)
+   - ~BooleanReference~
+   - ~EnumReference~
+   - ~StringReference~
+   - ~ArrayReference~
+   - ~EnumArrayReference~
+   - ~MakeArrayReferenceImpl~
+   - ~MakeBooleanArrayReference~
+   - ~MakeEnumArrayReference~
+   - ~MakeStringArrayReference~
+
+   This is *static boilerplate*. Copy verbatim from reference output lines
+   182–309, stripped of C++17 guards.
+
+* Task 7: Enum Validation (~enum.j2~)
+
+  Emitted per ~EnumType~. Two sections, each separately guarded:
+
+** Declaration (guarded ~__HAVE_BABEL__IPC__...DECLARATIONS__~)
+
+   #+begin_src c++
+   namespace {{ enum|ns_open }} {
+       void IpcEnumValidate( {{ enum.simple_name }} &theTarget,
+                             {{ enum.simple_name }} theValue,
+                             std::string &theErrorString ) __attribute__((weak));
+   }
+   #+end_src
+
+** Implementation (guarded ~__HAVE_BABEL__IPC__...IMPLEMENTATIONS__~)
+
+   #+begin_src c++
+   namespace {{ enum|ns_open }} {
+       void IpcEnumValidate( {{ enum.simple_name }} &theTarget,
+                             {{ enum.simple_name }} theValue,
+                             std::string &theErrorString ) {
+           switch (theValue) {
+           {% for val in enum.enumerators %}
+           case {{ enum.simple_name }}::{{ val }}:
+           {% endfor %}
+               theTarget = theValue;
+               return;
+           }
+           if (!theErrorString.empty()) { theErrorString += ", "; };
+           theErrorString += (std::to_string(
+               static_cast<{{ enum.underlying_type|qualified }}>(theValue))
+               + " not valid for {{ enum|qualified }}");
+       }
+   }
+   #+end_src
+
+* Task 8: Container Serialization (~container.j2~)
+
+  Emitted per varying-length container type (vector/list typedef).
+  Two sections, each separately guarded:
+
+** Declaration
+
+   #+begin_src c++
+   template <typename Boolean, typename IpcPolicy>
+   using {{ container.simple_name }}_ArrayView =
+       std::array<{{ container.element_type|qualified }}, 1>;
+
+   template <class IpcPolicy, typename Boolean, typename MessageT>
+   void IpcReadContainer( MessageT &&theMessage,
+                          {{ container|qualified }} &theVaryingLengthContainer );
+
+   template <class IpcPolicy, typename Boolean, typename MessageT>
+   void IpcWriteContainer( MessageT &&theMessage,
+                           const {{ container|qualified }} &theVaryingLengthContainer );
+   #+end_src
+
+** Implementation
+
+   For ~std::vector~ (consecutive):
+   #+begin_src c++
+   template <class IpcPolicy, typename Boolean, typename MessageT>
+   void IpcReadContainer( MessageT &&theMessage,
+                          {{ container|qualified }} &theVaryingLengthContainer ) {
+       const {{ container|qualified }}::value_type *theValues = nullptr;
+       {{ container|qualified }}::size_type theNoOfValues = 0;
+       IpcPolicy::getMessageArray( theMessage, theValues, theNoOfValues );
+       theVaryingLengthContainer.assign( theValues, (theValues+theNoOfValues) );
+   }
+   #+end_src
+
+   For ~std::list~ (non-consecutive): same pattern but uses element-by-element
+   iteration instead of ~assign~ from contiguous range.
+
+   Write is the same for both:
+   #+begin_src c++
+   template <class IpcPolicy, typename Boolean, typename MessageT>
+   void IpcWriteContainer( MessageT &&theMessage,
+                           const {{ container|qualified }} &theVaryingLengthContainer ) {
+       IpcPolicy::appendMessageArray(
+           theMessage,
+           &theVaryingLengthContainer.front(),
+           theVaryingLengthContainer.size()
+       );
+   }
+   #+end_src
+
+   *Note*: Containers whose element type is "complicated" (struct, enum, map,
+   variant, string, bool) require a different pattern — element-by-element
+   read/write using ~ReadContainerScope~/~WriteContainerScope~. This is handled
+   by checking ~element_type~ in the template.
+
+* Task 9: Struct Serialization (~struct.j2~)
+
+  Emitted per ~StructType~. Two sections, each separately guarded.
+
+** ~_TupleView~ Typedef
+
+   Maps each struct field to its wire type:
+
+   #+begin_src c++
+   template <typename Boolean, typename IpcPolicy>
+   using {{ struct.simple_name }}_TupleView = std::tuple<
+       {% for field in struct.fields %}
+       {{ field.type|ipc_template_type }}{{ "," if not loop.last }}
+       {% endfor %}
+   >;
+   #+end_src
+
+   The ~ipc_template_type~ filter maps:
+   | Field type      | Wire type                                        |
+   |-----------------+--------------------------------------------------|
+   | ~std::string~   | ~const char *~                                   |
+   | ~bool~          | ~Boolean~                                        |
+   | enum            | underlying integer type (e.g. ~std::uint8_t~)    |
+   | struct          | ~StructName_TupleView<Boolean,IpcPolicy>~        |
+   | variant         | ~typename IpcPolicy::VariantType~                |
+   | optional        | ~std::array<ElementWireType, 1>~                 |
+   | ipc_type        | ~typename IpcPolicy::FileDescriptor~ (etc.)      |
+   | pointer         | wire type of referred type                       |
+   | container       | ~ContainerName_ArrayView<Boolean,IpcPolicy>~     |
+   | builtin/other   | the type itself                                  |
+
+** ~IpcReadContainer~ Implementation
+
+   Per-field reading. The pattern depends on field type:
+
+   | Field type            | Read expression                                                                |
+   |-----------------------+--------------------------------------------------------------------------------|
+   | builtin (passthrough) | ~&theStruct.fieldName~ (passed directly to ~getMessageArguments~)               |
+   | ~std::string~         | ~&babel::ipc::StringReference(theStruct.fieldName)~                            |
+   | ~bool~                | ~&babel::ipc::BooleanReference<Boolean>(theStruct.fieldName)~                  |
+   | enum                  | ~&babel::ipc::EnumReference<EnumType, ns::IpcEnumValidate>(theStruct.field, theErrorString)~ |
+   | struct/container/ptr  | Separate call: ~ns::IpcReadContainer<IpcPolicy, Boolean>(theMessage, theStruct.field)~ |
+   | ipc_type              | ~IpcPolicy::FileDescriptor::getMessageArguments(theMessage, theStruct.field)~  |
+
+   Fields are grouped: "simple" fields (passthrough, string, bool, enum) are
+   batched into a single ~IpcPolicy::getMessageArguments(theMessage, ...)~ call.
+   "Complicated" fields (struct, container, variant, pointer, ipc_type) get
+   individual calls after the batch.
+
+   If any enum fields are read, ~std::string theErrorString;~ is declared and
+   checked at the end: ~if (!theErrorString.empty()) { throw std::invalid_argument(theErrorString); }~.
+
+** ~IpcWriteContainer~ Implementation
+
+   Per-field writing:
+
+   | Field type            | Write expression                                                             |
+   |-----------------------+------------------------------------------------------------------------------|
+   | builtin (passthrough) | ~theStruct.fieldName~ (passed directly to ~appendMessageArguments~)           |
+   | ~std::string~         | ~theStruct.fieldName.c_str()~                                                |
+   | ~bool~                | ~static_cast<Boolean>(theStruct.fieldName)~                                  |
+   | enum                  | ~static_cast<underlying_type>(theStruct.fieldName)~                          |
+   | struct/container/ptr  | Separate call: ~ns::IpcWriteContainer<IpcPolicy, Boolean>(theMessage, theStruct.field)~ |
+   | ipc_type              | ~IpcPolicy::FileDescriptor::appendMessageArguments(theMessage, theStruct.field)~ |
+
+   Same batching logic as read: simple fields in one ~appendMessageArguments~
+   call, complicated fields as individual calls.
+
+** Field Classification Helper
+
+   A Jinja2 test or Python function to classify fields:
+
+   #+begin_src python
+   def is_complicated_field(field) -> bool:
+       """True if field requires a separate IpcRead/WriteContainer call."""
+       return isinstance(field.type, (StructType, ContainerType, PointerType,
+                                      VariantType, OptionalType)) or \
+              field.type.has_attribute("ipc_type")
+   #+end_src
+
+* Task 10: Interface Stubs (~interface.j2~) + Top-Level (~ipc_header.h.j2~)
+
+** Interface Classification: Call vs Broadcast
+
+   An interface where *all methods return void* can be used as both a call
+   interface and a broadcast (signal) interface. babelc emits a warning comment
+   and generates both sets of functions:
+   - ~registerXxxImplementation~ + ~lookupXxxImplementation~ (call)
+   - ~registerXxxBroadcastListener~ + ~getXxxBroadcastProxy~ (broadcast)
+
+   An interface with *any non-void return* is call-only:
+   - ~registerXxxImplementation~ + ~lookupXxxImplementation~
+
+   The template checks ~interface.all_methods_void~ to decide.
+
+** D-Bus Interface Name
+
+   Derived from the C++ namespace + class name, dot-separated:
+   ~addressbook::v1::Server~ → ~"addressbook.v1.Server"~
+
+** Generated Classes Per Interface
+
+   All classes live in the interface's namespace. For interface ~Server~:
+
+*** ~ServerImplementationProxy<IpcPolicy>~ (server stub)
+
+    - Inherits: ~Server~ + ~IpcPolicy::Implementor~
+    - Destructor: calls ~deregisterImplementor~
+    - Non-copyable, non-movable
+    - Per method: instance override (delegates to ~itsImplementation~) + static
+      dispatch function (deserialises args from message, calls instance method)
+    - Friend: ~registerServerImplementation~
+
+*** ~ServerClientProxy<IpcPolicy>~ (client proxy)
+
+    - Inherits: ~Server~
+    - Non-copyable, non-movable
+    - Per method: creates a ~createMethodMessage~, serialises args, calls
+      ~sendMessage~. If method has return type: deserialises return value from
+      reply.
+    - Static member: ~theInterfaceName[]~
+    - Friend: ~lookupServerImplementation~
+
+*** ~ServerClientProxyWrapper<IpcPolicy>~ (client with local shortcut)
+
+    - Inherits: ~Server~ + ~IpcPolicy::Client~
+    - Holds ~shared_ptr<Server>~ (transmitter) + ~weak_ptr<Server>~ (shortcut)
+    - Per method: delegates to ~getItsTransmitter()~ which returns shortcut if
+      available, otherwise transmitter
+    - ~implementorIsRegistered~ callback: sets the shortcut
+    - Friend: ~lookupServerImplementation~
+
+*** ~ServerBroadcastListener<IpcPolicy>~ (signal receiver — if all_methods_void)
+
+    - Same structure as ~ImplementationProxy~ but uses ~registerListener~ /
+      ~addSignal~ instead of ~registerImplementor~ / ~addMethod~
+    - Friend: ~registerServerBroadcastListener~
+
+*** ~ServerBroadcastProxy<IpcPolicy>~ (signal emitter — if all_methods_void)
+
+    - Same structure as ~ClientProxy~ but uses ~createSignalMessage~ / ~emitSignal~
+      instead of ~createMethodMessage~ / ~sendMessage~
+    - Friend: ~getServerBroadcastProxy~
+
+** Registration Functions Per Interface
+
+*** ~registerServerImplementation~
+
+    #+begin_src c++
+    template <typename IpcPolicy>
+    std::shared_ptr<{{ iface|qualified }}>
+    register{{ iface.simple_name }}Implementation(
+        std::shared_ptr<IpcPolicy>           theIpcPolicy,
+        const char*                          theObjectPath,
+        std::shared_ptr<{{ iface|qualified }}> theImplementation
+    ) {
+        using ImplementationProxy = {{ iface.simple_name }}ImplementationProxy<IpcPolicy>;
+        using Boolean = typename IpcPolicy::Boolean;
+
+        auto theProxy = std::shared_ptr<ImplementationProxy>(
+            new ImplementationProxy(theIpcPolicy, theObjectPath, theImplementation)
+        );
+
+        theIpcPolicy->registerImplementor(theObjectPath, "{{ iface|dbus_interface_name }}", theProxy)
+            {% for method in iface.methods %}
+            .template addMethod<{{ method|vtable_signature }}>( "{{ method.name }}", ImplementationProxy::{{ method.name }} )
+            {% endfor %}
+            .publish();
+
+        return theProxy;
+    }
+    #+end_src
+
+    The ~vtable_signature~ filter produces:
+    - For void method with args: ~void, TupleView~
+    - For method with return: ~ReturnTupleView, ArgsTupleView~
+
+*** ~lookupServerImplementation~
+
+    Creates a ~ClientProxyWrapper~ wrapping a ~ClientProxy~, registers as client.
+
+*** ~registerServerBroadcastListener~ (if all_methods_void)
+
+    Same as ~registerImplementation~ but uses ~registerListener~ + ~addSignal~.
+
+*** ~getServerBroadcastProxy~ (if all_methods_void)
+
+    Creates a ~BroadcastProxy~.
+
+** Forward Declarations
+
+   Emitted *before* any implementation code, at the top of the file.
+   Per interface, in its namespace:
+
+   #+begin_src c++
+   template <typename IpcPolicy>
+   std::shared_ptr<{{ iface|qualified }}>
+   register{{ iface.simple_name }}Implementation(...);
+
+   template <typename IpcPolicy>
+   std::shared_ptr<{{ iface|qualified }}>
+   lookup{{ iface.simple_name }}Implementation(...);
+   #+end_src
+
+   Plus broadcast variants if ~all_methods_void~.
+
+** Method Argument Serialization in Proxy Classes
+
+   The proxy classes need to serialize/deserialize method arguments.
+   This reuses the *same logic* as struct field serialization (Task 9):
+
+   - Simple args: batched into ~getMessageArguments~ / ~appendMessageArguments~
+   - Complicated args: individual ~IpcReadContainer~ / ~IpcWriteContainer~ calls
+
+   The static dispatch function in ~ImplementationProxy~:
+   #+begin_src c++
+   static void {{ method.name }}( ImplementorPtr theThis, Message &theArguments, Message &{{ "theReturn" if method.return_type else "" }} ) {
+       auto &theProxy = dynamic_cast<{{ iface.simple_name }}ImplementationProxy&>(*theThis);
+       {% for arg in method.arguments %}
+       {{ arg.type|qualified }} {{ arg.name }};
+       {% endfor %}
+
+       // deserialize arguments (same pattern as struct read)
+       ...
+
+       {% if method.return_type %}
+       auto theReturnValue = theProxy.{{ method.name }}({{ method.arguments|map(attribute='name')|join(', ') }});
+       // serialize return value into theReturn
+       ...
+       {% else %}
+       theProxy.{{ method.name }}({{ method.arguments|map(attribute='name')|join(', ') }});
+       {% endif %}
+   }
+   #+end_src
+
+** Top-Level Template (~ipc_header.h.j2~)
+
+   Orchestrates the full output:
+
+   #+begin_src jinja
+   #ifndef {{ guard_name }}
+   #define {{ guard_name }}
+
+   #include <memory>
+   #include <type_traits>
+   #include <algorithm>
+   #include <tuple>
+   #include <array>
+
+   #include "{{ header_path }}"
+
+   {# --- Forward declarations per interface --- #}
+   {% for iface in interfaces %}
+   {% include "interface_declarations.j2" %}
+   {% endfor %}
+
+   //==============================================================================
+   // Below here is only implementation code.
+
+   {# --- Static helpers (once) --- #}
+   {% include "babel_helpers.j2" %}
+   {% for kind in container_kinds_used %}
+   {% include "container_helpers.j2" %}
+   {% endfor %}
+   {% include "babel_helpers_last.j2" %}
+   {% include "helpers.j2" %}
+
+   {# --- Per-type declarations --- #}
+   {% for cont in containers %}
+   {% include "container.j2" with context %}
+   {% endfor %}
+   {% for enum in enums %}
+   {% include "enum.j2" with context %}
+   {% endfor %}
+   {% for struct in structs %}
+   {% include "struct.j2" with context %}
+   {% endfor %}
+
+   {# --- Per-type implementations --- #}
+   {# (same loop, implementation sections) #}
+
+   {# --- Per-interface stubs + implementations --- #}
+   {% for iface in interfaces %}
+   {% include "interface.j2" with context %}
+   {% endfor %}
+
+   #endif
+   #+end_src
+
+* Shared Type-Mapping Logic (~ipc_generator.py~)
+
+  The ~ipc_value_type~, ~ipc_template_type~, ~read_expr~, ~write_expr~ filters
+  encapsulate the core type-mapping logic that babelc has in
+  ~asIpcValueTypeName~, ~asIpcTemplateTypeName~, ~asIpcReference~,
+  ~asIpcWriterExpression~.
+
+  These are implemented as Python functions registered as Jinja2 filters:
+
+  #+begin_src python
+  def ipc_value_type(cpp_type) -> str:
+      """Map a CppType to its D-Bus wire representation."""
+      match cpp_type:
+          case t if t.has_attribute("ipc_type"):
+              return f"typename IpcPolicy::{t.get_attribute('ipc_type')}"
+          case t if t.is_bool:
+              return "Boolean"
+          case t if t.is_string:
+              return "const char *"
+          case EnumType():
+              return cpp_type.underlying_type.qualified_name
+          case OptionalType():
+              return f"std::array<{ipc_template_type(cpp_type.element_type)}, 1>"
+          case _:
+              return cpp_type.qualified_name
+  #+end_src
+
+  #+begin_src python
+  def ipc_template_type(cpp_type) -> str:
+      """Map a CppType to its TupleView/ArrayView template argument."""
+      match cpp_type:
+          case t if t.has_attribute("ipc_type"):
+              return f"typename IpcPolicy::{t.get_attribute('ipc_type')}"
+          case PointerType():
+              return ipc_template_type(cpp_type.referred_type)
+          case StructType():
+              return f"{cpp_type.qualified_name}_TupleView<Boolean,IpcPolicy>"
+          case VariantType():
+              return "typename IpcPolicy::VariantType"
+          case OptionalType():
+              return ipc_value_type(cpp_type)
+          case MapContainer():
+              return f"{cpp_type.qualified_name}_ArrayView<Boolean,IpcPolicy>"
+          case ContainerType() if is_complicated_element(cpp_type.element_type):
+              return f"{cpp_type.qualified_name}_ArrayView<Boolean,IpcPolicy>"
+          case _:
+              return ipc_value_type(cpp_type)
+  #+end_src
+
+* Test Strategy
+
+  Each task has its own test file:
+
+  | Task | Test file                    | What is tested                                    |
+  |------+------------------------------+---------------------------------------------------|
+  |    6 | ~test_ipc_generator.py~      | Static helpers rendered correctly (string match)  |
+  |    7 | ~test_ipc_generator.py~      | Enum: Sex → correct switch/case output            |
+  |    8 | ~test_ipc_generator.py~      | Container: PhoneNumbers → correct read/write      |
+  |    9 | ~test_ipc_generator.py~      | Struct: Person → correct TupleView + read/write   |
+  |   10 | ~test_ipc_generator.py~      | Interface: Server → all proxy classes + reg funcs  |
+  |   10 | ~test_integration.py~        | Full pipeline: addressbook.h → diff vs reference  |
+
+  All tests in ~test_ipc_generator.py~ construct synthetic type model instances
+  and render templates directly, checking output contains expected fragments.
+  The integration test runs the full pipeline.
+
+* Subtasks [11/11]
+
+** DONE [#A] Task 6a: ~babel_helpers.j2~ — static type traits
+   Copy from reference output lines 103–180, strip C++17 guards.
+
+** DONE [#A] Task 6b: ~container_helpers.j2~ — per-container-kind specialisations
+   Template loop over ~container_kinds_used~. Each emits guarded include +
+   ~is_supported_container_helper~ specialisation.
+
+** DONE [#A] Task 6c: ~helpers.j2~ — ~babel::ipc~ helper templates
+   Copy from reference output lines 182–309, strip C++17 guards.
+
+** DONE [#A] Task 7: ~enum.j2~ — declaration + implementation
+   Enum validate function with switch-case over enumerators.
+   Test with ~Sex~ enum.
+
+** DONE [#A] Task 8: ~container.j2~ — declaration + implementation
+   Varying-length container read/write. Handle both consecutive (vector) and
+   non-consecutive (list). Handle simple vs complicated element types.
+   Test with ~PhoneNumbers~.
+
+** DONE [#A] Task 9a: ~struct.j2~ — ~_TupleView~ typedef
+   Map each field to its wire type using ~ipc_template_type~ filter.
+
+** DONE [#A] Task 9b: ~struct.j2~ — ~IpcReadContainer~ implementation
+   Field batching: simple fields in one ~getMessageArguments~ call,
+   complicated fields as individual ~IpcReadContainer~ calls.
+   Enum error string handling.
+
+** DONE [#A] Task 9c: ~struct.j2~ — ~IpcWriteContainer~ implementation
+   Same batching for writes.
+
+** DONE [#A] Task 10a: ~interface.j2~ — proxy classes
+   All 5 (or 3) proxy classes per interface.
+
+** DONE [#A] Task 10b: ~interface.j2~ — registration functions
+   ~registerImplementation~, ~lookupImplementation~, ~registerBroadcastListener~,
+   ~getBroadcastProxy~.
+
+** DONE [#A] Task 10c: ~ipc_header.h.j2~ — top-level orchestration + ~ipc_generator.py~
+   Include guard, standard includes, include of original header.
+   Ordering: forward declarations → helpers → per-type decls → per-type impls
+   → per-interface stubs → per-interface implementations.
+   All Jinja2 custom filters implemented. ~render_ipc_header(output_path)~
+   curried function. Filters registered on environment. Full pipeline wired.

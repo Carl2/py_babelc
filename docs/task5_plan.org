@@ -1,0 +1,273 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-bigblow.setup
+#+TITLE: Task 5: type_model.py — Validation Design
+#+FILETAGS: :validation:type-model:
+#+DATE: 2026-05-04
+#+AUTHOR:
+#+STARTUP: overview
+#+PRIORITIES: A B C
+
+* Problem
+
+  After the clang parser (Task 4) extracts a ~CompilationUnit~ from the AST, we
+  need to validate the type model before code generation. This catches errors
+  early — with clear messages — rather than producing broken C++ output.
+
+  babelc performs validation spread across both its parser and generator code.
+  We consolidate all validation into a single pipeline step:
+  ~validate_type_model(ctx) -> Maybe~.
+
+* What babelc Validates
+
+  From studying the parser (~babel_parser.cpp~) and IPC generator
+  (~babel_plugins_ipcgenerator.cpp~), babelc enforces these rules:
+
+** Disallowed bare types
+
+   babelc rejects raw C/C++ types that lack a fixed width. Only ~<cstdint>~
+   types are allowed.
+
+   Disallowed:
+   - ~char~, ~wchar_t~, ~short~, ~int~, ~long~, ~long int~, ~long long~,
+     ~long long int~ (and ~signed~/~unsigned~ variants of each)
+   - ~size_t~, ~ssize_t~, ~ptrdiff_t~, ~nullptr_t~ (with and without ~std::~)
+
+   This prevents ambiguous wire formats — D-Bus needs exact-width types.
+
+** Interface method constraints
+
+   Methods on interface types (abstract classes) must:
+   1. Be pure virtual (~= 0~)
+   2. Be non-const
+   3. Return by value (not by pointer or reference)
+   4. Take arguments by value or by const reference only
+   5. Not have default argument values
+
+   These constraints ensure a 1:1 mapping to D-Bus method signatures.
+
+** Enum constraints
+
+   - Enums must have an explicit underlying type (~enum struct X : T~)
+   - The underlying type must be a fixed-width integer (~std::uint8_t~,
+     ~std::int32_t~, etc.)
+
+** ~ipc_type~ attribute constraints
+
+   When ~[[babelc::ipc_type("X")]]~ is applied:
+   - The target must be an enum type
+   - Currently only ~"FileDescriptor"~ is a known ipc_type value (maps to
+     Unix fd passing over D-Bus)
+
+** ~use_discriminated_variant~ attribute constraints
+
+   When ~[[babelc::use_discriminated_variant]]~ is applied:
+   - The target must be a variant type (~boost::variant~ / ~std::variant~)
+   - The variant should contain either vacuous types or types that share
+     the same D-Bus type signature (i.e. the discriminant is needed to
+     distinguish them)
+   - If no types share signatures and no vacuous types exist, it's a warning
+     (attribute is unnecessary)
+
+** Struct field constraints
+
+   - All field types must resolve to known types (built-in, enum, struct,
+     container, or typedef to one of these)
+   - No raw pointer fields (only ~shared_ptr~ / ~unique_ptr~)
+
+* Function Signature
+
+  #+begin_src python
+  def validate_type_model(ctx: dict) -> Maybe:
+      """Validate the extracted CompilationUnit.
+
+      Reads ctx["compilation_unit"].
+      Returns Just(ctx) if valid.
+      Returns Maybe(value="error description", monoid=False) on first fatal error.
+
+      Warnings are collected in ctx["validation_warnings"] (list of strings).
+      """
+  #+end_src
+
+  Pipeline position:
+  #+begin_src python
+  Just(ctx)
+      .bind(parse_with_clang)
+      .bind(extract_type_model)
+      .bind(validate_type_model)     # <-- this step
+      .bind(render_ipc_header(...))
+  #+end_src
+
+* Validation Rules (Formal)
+
+  Each rule has an ID for traceability in error messages.
+
+  | ID    | Scope       | Rule                                                           | Severity |
+  |-------+-------------+----------------------------------------------------------------+----------|
+  | V001  | Enum        | Must have an explicit underlying type                          | Error    |
+  | V002  | Enum        | Underlying type must be a fixed-width integer                  | Error    |
+  | V003  | Interface   | All methods must be pure virtual                               | Error    |
+  | V004  | Interface   | Methods must be non-const                                      | Error    |
+  | V005  | Interface   | Methods must return by value                                   | Error    |
+  | V006  | Interface   | Arguments must be by value or const reference                  | Error    |
+  | V007  | Interface   | Arguments must not have default values                         | Cancelled |
+  | V008  | Struct      | Field types must resolve to supported types                    | Error    |
+  | V009  | Struct      | No raw pointer fields                                         | Error    |
+  | V010  | Global      | No bare C types (~int~, ~char~, ~long~, etc.)                  | Error    |
+  | V011  | Attribute   | ~ipc_type~ only on enum types                                 | Error    |
+  | V012  | Attribute   | ~use_discriminated_variant~ only on variant types              | Error    |
+  | V013  | Attribute   | ~use_discriminated_variant~ unnecessary (no ambiguous types)   | Warning  |
+  | V014  | Interface   | Must have at least one method                                 | Error    |
+
+* Implementation Approach
+
+  Validation is implemented as a set of small, focused validator functions.
+  Each validator takes the ~CompilationUnit~ and returns a list of
+  ~ValidationResult~ items:
+
+  #+begin_src python
+  @dataclass(frozen=True)
+  class ValidationResult:
+      rule_id: str
+      severity: str          # "error" or "warning"
+      type_name: str         # fully qualified name of the offending type
+      message: str
+  #+end_src
+
+  The top-level ~validate_type_model~ function:
+  1. Runs all validators, collecting results.
+  2. If any result has severity ~"error"~, returns
+     ~Maybe(value=formatted_errors, monoid=False)~.
+  3. If only warnings, adds them to ~ctx["validation_warnings"]~ and returns
+     ~Just(ctx)~.
+  4. If no issues, returns ~Just(ctx)~.
+
+  #+begin_src python
+  def validate_type_model(ctx: dict) -> Maybe:
+      cu = ctx["compilation_unit"]
+      results = (
+          validate_enums(cu)
+          + validate_interfaces(cu)
+          + validate_structs(cu)
+          + validate_attributes(cu)
+          + validate_no_bare_types(cu)
+      )
+      errors   = [r for r in results if r.severity == "error"]
+      warnings = [r for r in results if r.severity == "warning"]
+
+      if errors:
+          msg = "\n".join(f"[{e.rule_id}] {e.type_name}: {e.message}" for e in errors)
+          return Maybe(value=f"Validation failed:\n{msg}", monoid=False)
+
+      return Just({**ctx, "validation_warnings": [
+          f"[{w.rule_id}] {w.type_name}: {w.message}" for w in warnings
+      ]})
+  #+end_src
+
+* Individual Validators
+
+** ~validate_enums(cu) -> list[ValidationResult]~
+
+   For each ~EnumType~ in the compilation unit:
+   - V001: Check ~underlying_type~ is not ~None~.
+   - V002: Check ~underlying_type~ is in the set of fixed-width integer types.
+
+** ~validate_interfaces(cu) -> list[ValidationResult]~
+
+   For each ~InterfaceType~:
+   - V014: Check ~len(methods) > 0~.
+   - For each method:
+     - V003: Check ~is_pure_virtual~ is True.
+     - V004: Check ~is_const~ is False.
+     - V005: Check return type is not a pointer/reference type.
+     - V006: Check each argument is by value or const-ref.
+     - V007: Check no default values (if tracked by the parser).
+
+** ~validate_structs(cu) -> list[ValidationResult]~
+
+   For each ~StructType~:
+   - For each field:
+     - V008: Check field type resolves to a known type category.
+     - V009: Check field type is not a raw pointer.
+
+** ~validate_attributes(cu) -> list[ValidationResult]~
+
+   For each type that carries babelc attributes:
+   - V011: If ~ipc_type~ is present, the type must be an ~EnumType~.
+   - V012: If ~use_discriminated_variant~ is present, the type must be a
+     ~VariantType~.
+   - V013: If ~use_discriminated_variant~ is present but no ambiguous types
+     exist, emit a warning.
+
+** ~validate_no_bare_types(cu) -> list[ValidationResult]~
+
+   Traverse all types referenced in struct fields and interface method
+   arguments/return types. If any type's name matches the disallowed set:
+   - V010: Error.
+
+   Disallowed names:
+   #+begin_src python
+   DISALLOWED_BARE_TYPES = frozenset({
+       "char", "signed char", "unsigned char",
+       "wchar_t", "signed wchar_t", "unsigned wchar_t",
+       "short", "signed short", "unsigned short",
+       "int", "signed int", "unsigned int",
+       "long", "signed long", "unsigned long",
+       "long int", "signed long int", "unsigned long int",
+       "long long", "signed long long", "unsigned long long",
+       "long long int", "signed long long int", "unsigned long long int",
+       "size_t", "std::size_t",
+       "ssize_t", "std::ssize_t",
+       "ptrdiff_t", "std::ptrdiff_t",
+       "nullptr_t", "std::nullptr_t",
+   })
+   #+end_src
+
+* Test Cases
+
+  | Test                                      | Input                                                              | Expected                            |
+  |-------------------------------------------+--------------------------------------------------------------------+-------------------------------------|
+  | Valid compilation unit                     | addressbook.h types                                                | ~is_just()~, no warnings            |
+  | V001: Enum without underlying type         | ~enum struct Bad { A, B }~ (no ~: T~)                             | Error V001                          |
+  | V002: Enum with ~int~ underlying           | ~enum struct Bad : int { A }~                                     | Error V002                          |
+  | V003: Non-pure-virtual method              | Interface with ~virtual void foo()~ (no ~= 0~)                    | Error V003                          |
+  | V005: Method returning pointer             | ~virtual Foo* get() = 0~                                          | Error V005                          |
+  | V006: Non-const ref argument               | ~virtual void f(Foo& x) = 0~                                      | Error V006                          |
+  | V009: Raw pointer field                    | ~struct S { int* p; }~                                            | Error V009                          |
+  | V010: Bare ~int~ type                      | ~struct S { int x; }~                                             | Error V010                          |
+  | V011: ~ipc_type~ on non-enum               | ~struct S [[babelc::ipc_type("X")]] {}~                           | Error V011                          |
+  | V012: ~use_discriminated_variant~ on struct | ~struct S [[babelc::use_discriminated_variant]] {}~               | Error V012                          |
+  | V013: Unnecessary discriminant             | Variant with no ambiguous types + attr                            | Warning V013                        |
+  | V014: Empty interface                      | ~struct I { virtual ~I() {} }~ (no methods)                       | Error V014                          |
+  | Multiple errors                            | Several violations in one CU                                      | All errors collected in message     |
+  | Warnings don't block                       | Only warnings present                                             | ~is_just()~, warnings in ctx        |
+
+* Dependencies
+
+  - Task 3 (~type_model.py~) — the ~CompilationUnit~, ~EnumType~, etc.
+    dataclasses must be defined.
+  - Task 4 (~clang_parser.py~) — the extraction must populate the type model
+    correctly so validation has meaningful data to check.
+
+* Subtasks [3/3]
+
+** DONE Implement ~ValidationResult~ dataclass and ~DISALLOWED_BARE_TYPES~
+   CLOSED: [2026-05-04]
+   Added to ~type_model.py~: ~ValidationResult~ frozen dataclass,
+   ~DISALLOWED_BARE_TYPES~ frozenset, ~FIXED_WIDTH_INTEGER_TYPES~ frozenset.
+   Also added ~is_const: bool = False~ to ~Method~ dataclass and updated
+   ~clang_parser.py~ to detect const methods from the AST.
+
+** DONE Implement validator functions and ~validate_type_model~
+   CLOSED: [2026-05-04]
+   Five validators (~validate_enums~, ~validate_interfaces~, ~validate_structs~,
+   ~validate_attributes~, ~validate_no_bare_types~) plus the top-level
+   ~validate_type_model(ctx) -> Maybe~ orchestrator.
+   V007 cancelled — no production header uses default parameter values on
+   babelc interface methods.
+
+** DONE Implement ~tests/test_type_model.py~ (validation section)
+   CLOSED: [2026-05-04]
+   23 tests covering all implemented rules (V001–V006, V008–V014) plus
+   pipeline integration (valid addressbook, multiple errors, warnings-only).
+   98 total tests in full suite, all passing.

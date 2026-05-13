@@ -1,0 +1,37 @@
+{# Task 7: Enum IPC validation — declaration and implementation sections. #}
+{# Context: enum (EnumType) #}
+{% macro declaration(enum) %}
+#ifndef __HAVE_BABEL__IPC__{{ enum.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+#define __HAVE_BABEL__IPC__{{ enum.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+
+{{ enum|ns_open }}
+
+    void IpcEnumValidate( {{ enum.name }} &theTarget, {{ enum.name }} theValue, std::string &theErrorString ) __attribute__((weak));
+
+{{ enum|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro implementation(enum) %}
+#ifndef __HAVE_BABEL__IPC__{{ enum.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+#define __HAVE_BABEL__IPC__{{ enum.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+
+{{ enum|ns_open }}
+
+    void IpcEnumValidate( {{ enum.name }} &theTarget, {{ enum.name }} theValue, std::string &theErrorString )  {
+        switch (theValue) {
+        {% for val in enum.enumerators %}
+        case {{ enum.name }}::{{ val.name }}:
+        {% endfor %}
+            theTarget = theValue;
+            return;
+        }
+        if (!theErrorString.empty()) { theErrorString += ", "; };    theErrorString += (std::to_string(static_cast<{{ enum.underlying_type }}>(theValue)) + " not valid for {{ enum|qualified }}");
+    }
+
+{{ enum|ns_close }}
+
+
+#endif
+{% endmacro %}
