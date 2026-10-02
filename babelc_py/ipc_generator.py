@@ -790,6 +790,14 @@ def _write_return_block(method: Method, cu: CompilationUnit) -> str:
     """Generate the write_return_block for ImplementationProxy static handler."""
     if method.return_type == "void":
         return ""
+    if _is_complicated_field(method.return_type, cu):
+        ns = _namespace_for(method.return_type, cu)
+        return (
+            f"            {ns}::IpcWriteContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"                theReturnValue,\n"
+            f"                theProxy.{method.name}({_method_params_forward(method)})\n"
+            f"            );\n"
+        )
     expr = _write_return_expr(method, cu)
     return (
         f"            IpcPolicy::appendMessageArguments(\n"
@@ -838,6 +846,15 @@ def _client_read_return_block(method: Method, cu: CompilationUnit) -> str:
         lines.append(
             "                &babel::ipc::BooleanReference<Boolean>(theIpcReturnValue)"
         )
+        lines.append("            );")
+    elif _is_complicated_field(rt, cu):
+        ns = _namespace_for(rt, cu)
+        lines.append("")
+        lines.append(
+            f"            {ns}::IpcReadContainer<IpcPolicy, typename IpcPolicy::Boolean>("
+        )
+        lines.append("                theMessageReturnValue,")
+        lines.append("                theIpcReturnValue")
         lines.append("            );")
     else:
         # Builtin numeric
