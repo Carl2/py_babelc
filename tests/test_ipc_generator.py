@@ -7,6 +7,7 @@ import textwrap
 import jinja2
 import pytest
 
+from babelc_py.jinja_env import build_guard_name, guard_macro, ns_close, ns_open, qualified
 from babelc_py.ipc_generator import (
     EnrichedContainer,
     EnrichedField,
@@ -14,7 +15,6 @@ from babelc_py.ipc_generator import (
     EnrichedMethod,
     EnrichedParam,
     EnrichedStruct,
-    _build_guard_name,
     _collect_container_kinds,
     _create_jinja_env,
     _dbus_interface_name_filter,
@@ -22,11 +22,7 @@ from babelc_py.ipc_generator import (
     _enrich_field,
     _enrich_interface,
     _enrich_struct,
-    _guard_macro,
     _is_complicated_field,
-    _ns_close_filter,
-    _ns_open_filter,
-    _qualified_filter,
     ipc_template_type,
     render_ipc_header,
 )
@@ -135,33 +131,33 @@ def addressbook_cu() -> CompilationUnit:
 
 
 class TestFilters:
-    def test_guard_macro(self):
-        assert _guard_macro("addressbook::v1::Sex") == "ADDRESSBOOK__V1__SEX"
+    def testguard_macro(self):
+        assert guard_macro("addressbook::v1::Sex") == "ADDRESSBOOK__V1__SEX"
 
     def test_guard_macro_leading_colons(self):
-        assert _guard_macro("::addressbook::v1::Sex") == "__ADDRESSBOOK__V1__SEX"
+        assert guard_macro("::addressbook::v1::Sex") == "__ADDRESSBOOK__V1__SEX"
 
     def test_qualified_filter_with_obj(self, addressbook_cu):
         enum = addressbook_cu.enums[0]
-        assert _qualified_filter(enum) == "::addressbook::v1::Sex"
+        assert qualified(enum) == "::addressbook::v1::Sex"
 
     def test_qualified_filter_string(self):
-        assert _qualified_filter("addressbook::v1::Sex") == "::addressbook::v1::Sex"
+        assert qualified("addressbook::v1::Sex") == "::addressbook::v1::Sex"
 
     def test_ns_open(self, addressbook_cu):
         enum = addressbook_cu.enums[0]
-        assert _ns_open_filter(enum) == "namespace addressbook::v1 {"
+        assert ns_open(enum) == "namespace addressbook::v1 {"
 
     def test_ns_close(self, addressbook_cu):
         enum = addressbook_cu.enums[0]
-        assert _ns_close_filter(enum) == "}"
+        assert ns_close(enum) == "}"
 
     def test_dbus_interface_name(self, addressbook_cu):
         iface = addressbook_cu.interfaces[0]
         assert _dbus_interface_name_filter(iface) == "addressbook.v1.Server"
 
-    def test_build_guard_name(self):
-        result = _build_guard_name("/tmp/babelc_ref/addressbook.ipc.h")
+    def testbuild_guard_name(self):
+        result = build_guard_name("/tmp/babelc_ref/addressbook.ipc.h")
         assert result.startswith("__")
         assert result.endswith("__")
         assert "ADDRESSBOOK" in result

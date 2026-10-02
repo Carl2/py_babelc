@@ -17,6 +17,10 @@ from typing import Any
 import jinja2
 from pymonad.maybe import Just, Maybe
 
+from babelc_py.jinja_env import (
+    build_guard_name,
+    create_env,
+)
 from babelc_py.type_model import (
     AliasType,
     CompilationUnit,
@@ -792,35 +796,6 @@ def _enrich_interface(
 # ---------------------------------------------------------------------------
 
 
-def _guard_macro(name: str) -> str:
-    """Convert a qualified name to an include guard style: '::a::b::C' -> '__A__B__C'."""
-    return name.replace("::", "__").upper()
-
-
-def _qualified_filter(obj: Any) -> str:
-    """Jinja2 filter: return '::ns1::ns2::Name'."""
-    if hasattr(obj, "qualified_name"):
-        qn = obj.qualified_name
-    else:
-        qn = str(obj)
-    if not qn.startswith("::"):
-        return "::" + qn
-    return qn
-
-
-def _ns_open_filter(obj: Any) -> str:
-    """Jinja2 filter: emit 'namespace a::b {' (C++20)."""
-    ns = obj.namespace if hasattr(obj, "namespace") else ()
-    if ns:
-        return f"namespace {'::'.join(ns)} {{"
-    return "namespace {"
-
-
-def _ns_close_filter(obj: Any) -> str:
-    """Jinja2 filter: emit closing brace (C++20 = single brace)."""
-    return "}"
-
-
 def _dbus_interface_name_filter(obj: Any) -> str:
     """Jinja2 filter: return the D-Bus interface name."""
     if hasattr(obj, "dbus_name"):
@@ -848,26 +823,8 @@ def _collect_container_kinds(cu: CompilationUnit) -> list[str]:
 
 
 def _create_jinja_env() -> jinja2.Environment:
-    """Create a configured Jinja2 environment."""
-    env = jinja2.Environment(
-        loader=jinja2.PackageLoader("babelc_py", "templates"),
-        keep_trailing_newline=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    env.filters["guard_macro"] = _guard_macro
-    env.filters["qualified"] = _qualified_filter
-    env.filters["ns_open"] = _ns_open_filter
-    env.filters["ns_close"] = _ns_close_filter
-    env.filters["dbus_interface_name"] = _dbus_interface_name_filter
-    return env
-
-
-def _build_guard_name(output_path: str) -> str:
-    """Build an include guard macro name from the output path."""
-    # Convert path to uppercase with underscores
-    name = output_path.replace("/", "_").replace(".", "_").replace("-", "_")
-    return f"__{name.upper()}__"
+    """Create the shared Jinja2 environment plus IPC-specific filters."""
+    return create_env(dbus_interface_name=_dbus_interface_name_filter)
 
 
 def render_ipc_header(output_path: str) -> callable:
@@ -895,7 +852,7 @@ def render_ipc_header(output_path: str) -> callable:
 
             rendered = template.render(
                 header_path=cu.header_path,
-                guard_name=_build_guard_name(output_path),
+                guard_name=build_guard_name(output_path),
                 enums=enriched_enums,
                 structs=enriched_structs,
                 containers=enriched_containers,
