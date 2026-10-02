@@ -63,7 +63,7 @@
             theVaryingLengthContainer.size()
         );
 {% else %}
-        typename IpcPolicy::template WriteContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, theVaryingLengthContainer.size() );
+        typename IpcPolicy::template WriteContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage );
         for (const auto &theElement : theVaryingLengthContainer) {
 {{ cont.element_write_expr }}
         }
