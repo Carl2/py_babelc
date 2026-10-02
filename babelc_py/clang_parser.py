@@ -631,12 +631,12 @@ def _add_referenced_from_includes(main: dict, pool: dict) -> None:
     Mirrors the original babelc: included types are followed lazily, only
     when referenced by name. Included interfaces are never added.
     """
-    by_name: dict[str, tuple[str, object]] = {}
+    by_name: dict[str, list[tuple[str, object]]] = {}
     for cat in _CATEGORIES:
         if cat == "interfaces":
             continue
         for t in pool[cat]:
-            by_name.setdefault(t.qualified_name, (cat, t))
+            by_name.setdefault(t.qualified_name, []).append((cat, t))
     have = {t.qualified_name for c in _CATEGORIES for t in main[c]}
     work = [t for c in _CATEGORIES for t in main[c]]
     while work:
@@ -646,9 +646,9 @@ def _add_referenced_from_includes(main: dict, pool: dict) -> None:
                 if name in have:
                     continue
                 have.add(name)
-                cat, obj = by_name[name]
-                main[cat].append(obj)
-                work.append(obj)
+                for cat, obj in by_name[name]:
+                    main[cat].append(obj)
+                    work.append(obj)
 
 
 def _collect_namespaces(result: dict) -> tuple[str, ...]:

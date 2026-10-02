@@ -89,3 +89,22 @@ def test_brace_initialised_field_is_required_in_json(tmp_path):
     import re
     m = re.search(r"theRequiredFields\[\]\s*=\s*\{([^}]*)\}", text)
     assert m and '"a"' in m.group(1) and '"c"' in m.group(1) and '"b"' not in m.group(1)
+
+
+def test_included_container_alias_is_declared(tmp_path):
+    inc = tmp_path / "common.h"
+    inc.write_text(
+        "#pragma once\n#include <vector>\n#include <cstdint>\nnamespace n {\n"
+        "using Dv = std::vector<double>;\nstruct C { std::int64_t t{}; Dv d; };\n"
+        "using Cs = std::vector<C>;\n}\n"
+    )
+    hdr = tmp_path / "svc.h"
+    hdr.write_text(
+        '#pragma once\n#include "common.h"\nnamespace n {\n'
+        'struct [[babelc::interface_name("a.b")]] S {\n'
+        "  virtual ~S() = default;\n  virtual void f(const Cs& c) = 0;\n};\n}\n"
+    )
+    out = tmp_path / "o.h"
+    r = _run(str(hdr), "-o", str(out), f"--clang-arg=-I{tmp_path}")
+    assert r.returncode == 0, r.stderr
+    assert "IpcWriteContainer(  MessageT &&theMessage, const ::n::Cs" in out.read_text()
