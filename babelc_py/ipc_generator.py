@@ -1039,7 +1039,41 @@ def canonicalise_aliases(cu: CompilationUnit) -> CompilationUnit:
         )
         for t in cu.containers
     )
-    return replace(cu, structs=structs, interfaces=ifaces, containers=conts)
+    variants = tuple(
+        replace(v, alternatives=tuple(c(a) for a in v.alternatives))
+        for v in cu.variants
+    )
+    return replace(
+        cu, structs=structs, interfaces=ifaces, containers=conts, variants=variants
+    )
+
+
+@dataclass(frozen=True)
+class EnrichedVariant:
+    name: str
+    qualified_name: str
+    namespace: tuple
+    alternatives: tuple  # of dicts: type, wire, read, write, index
+    kind: str
+
+
+def _enrich_variant(v, cu: CompilationUnit) -> EnrichedVariant:
+    getter = "std::get" if v.variant_kind == "std" else "boost::get"
+    alts = []
+    for i, a in enumerate(v.alternatives):
+        qn = _qualified_name_for(a, cu)
+        _, rd = _elem_parts("theTypedValue_", a, cu, True)
+        _, wr = _elem_parts(f"{getter}<{qn}>(theVariant)", a, cu, False)
+        if not _is_complicated_field(a, cu):
+            rd = _emit_parts([(False, rd)], True)
+            wr = _emit_parts([(False, wr)], False)
+        alts.append(
+            {"index": i, "type": qn, "wire": ipc_template_type(a, cu),
+             "read": rd, "write": wr}
+        )
+    return EnrichedVariant(
+        v.name, v.qualified_name, v.namespace, tuple(alts), v.variant_kind
+    )
 
 
 def render_ipc_header(output_path: str) -> callable:
@@ -1074,7 +1108,12 @@ def render_ipc_header(output_path: str) -> callable:
                 **{t.qualified_name: ("struct", e)
                    for t, e in zip(cu.structs, enriched_structs)},
             }
-            raw = [*cu.containers, *cu.enums, *cu.structs]
+            enriched_variants = [_enrich_variant(v, cu) for v in cu.variants]
+            by_qn.update(
+                {v.qualified_name: ("variant", e)
+                 for v, e in zip(cu.variants, enriched_variants)}
+            )
+            raw = [*cu.containers, *cu.enums, *cu.structs, *cu.variants]
             ordered = [by_qn[t.qualified_name] for t in _toposort(raw)]
 
             rendered = template.render(

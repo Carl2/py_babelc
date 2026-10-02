@@ -2,6 +2,7 @@
 {% import "enum.j2" as enum_tpl %}
 {% import "container.j2" as container_tpl %}
 {% import "struct.j2" as struct_tpl %}
+{% import "variant.j2" as variant_tpl %}
 {% import "interface.j2" as interface_tpl %}
 
 #ifndef {{ guard_name }}
@@ -29,10 +30,10 @@
 {% include "babel_helpers_last.j2" %}
 {% include "helpers.j2" %}
 {% for kind, item in ordered %}
-{% if kind == "container" %}{{ container_tpl.declaration(item) }}{% elif kind == "enum" %}{{ enum_tpl.declaration(item) }}{% else %}{{ struct_tpl.declaration(item) }}{% endif %}
+{% if kind == "container" %}{{ container_tpl.declaration(item) }}{% elif kind == "enum" %}{{ enum_tpl.declaration(item) }}{% elif kind == "variant" %}{{ variant_tpl.declaration(item) }}{% else %}{{ struct_tpl.declaration(item) }}{% endif %}
 {% endfor %}
 {% for kind, item in ordered %}
-{% if kind == "container" %}{{ container_tpl.implementation(item) }}{% elif kind == "enum" %}{{ enum_tpl.implementation(item) }}{% else %}{{ struct_tpl.implementation(item) }}{% endif %}
+{% if kind == "container" %}{{ container_tpl.implementation(item) }}{% elif kind == "enum" %}{{ enum_tpl.implementation(item) }}{% elif kind == "variant" %}{{ variant_tpl.implementation(item) }}{% else %}{{ struct_tpl.implementation(item) }}{% endif %}
 {% endfor %}
 {% for iface in interfaces %}
 {{ interface_tpl.stubs(iface) }}

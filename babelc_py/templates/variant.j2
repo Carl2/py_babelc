@@ -1,0 +1,55 @@
+{# IPC read/write for variant types. #}
+{% macro declaration(v) %}
+#ifndef HAVE_BABEL_IPC_{{ v.qualified_name|guard_macro }}_IPC_DECLARATIONS
+#define HAVE_BABEL_IPC_{{ v.qualified_name|guard_macro }}_IPC_DECLARATIONS
+
+{{ v|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ v|qualified }} &theVariant );
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ v|qualified }} &theVariant );
+
+{{ v|ns_close }}
+
+#endif
+{% endmacro %}
+{% macro implementation(v) %}
+#ifndef HAVE_BABEL_IPC_{{ v.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+#define HAVE_BABEL_IPC_{{ v.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+
+{{ v|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ v|qualified }} &theVariant ) {
+        typename IpcPolicy::template ReadVariantScope<> theScope( theMessage );
+
+{% for a in v.alternatives %}
+        {% if not loop.first %}else {% endif %}if (theScope.template containsType<{{ a.wire }}>()) {
+            {{ a.type }} theTypedValue_{};
+{{ a.read }}
+            theVariant = theTypedValue_;
+        }
+{% endfor %}
+        else {
+            throw std::invalid_argument("Unsupported variant type received");
+        }
+    }
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ v|qualified }} &theVariant ) {
+        switch(theVariant.{{ "index" if v.kind == "std" else "which" }}()) {
+{% for a in v.alternatives %}
+        case {{ a.index }}: {
+                typename IpcPolicy::template WriteVariantScope<{{ a.wire }}> theScope( theMessage );
+{{ a.write }}
+            }
+            break;
+{% endfor %}
+        }
+    }
+
+{{ v|ns_close }}
+
+#endif
+{% endmacro %}

@@ -272,3 +272,18 @@ def test_wire_view_types_match_original(tmp_path):
     assert "using SV_ArrayView = std::array<const char *,1>;" in t
     assert "using VV_ArrayView = std::array<typename IpcPolicy::VariantType,1>;" in t
     assert "std::array<::n::DV_ArrayView<Boolean,IpcPolicy>,1>, ::n::SV_ArrayView<Boolean,IpcPolicy>" in t
+
+
+def test_variant_ipc_code_generated(tmp_path):
+    from tests.test_json_correctness import boost_include
+    from babelc_py.__main__ import generate
+
+    inc = boost_include()
+    if not inc:
+        pytest.skip("boost not available")
+    out = tmp_path / "o.ipc.h"
+    hdr = HEADERS_DIR / "ipc_variant.h"
+    assert generate(str(hdr), str(out), "ipc", discover_system_cpp_includes() + [f"-I{inc}"], 17) == 0
+    text = out.read_text()
+    assert "ReadVariantScope" in text and "WriteVariantScope" in text
+    assert "Unsupported variant type received" in text
