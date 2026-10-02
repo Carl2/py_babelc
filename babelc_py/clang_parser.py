@@ -247,6 +247,7 @@ def _resolve_container(
             namespace=namespace,
             container_kind="map",
             element_type=element,
+            key_type=args[0] if len(args) > 1 else None,
         )
 
     # Optional
@@ -680,6 +681,8 @@ def _type_references(type_obj: object) -> set[str]:
         refs.add(type_obj.target_type)
     elif isinstance(type_obj, ContainerType):
         refs.add(type_obj.element_type)
+        if type_obj.key_type:
+            refs.add(type_obj.key_type)
     elif isinstance(type_obj, PointerType):
         refs.add(type_obj.pointee_type)
     elif isinstance(type_obj, VariantType):
@@ -695,7 +698,12 @@ def _toposort(types: list, name_attr: str = "qualified_name") -> list:
     """
     name_to_type = {getattr(t, name_attr): t for t in types}
     name_to_refs = {
-        getattr(t, name_attr): _type_references(t) & set(name_to_type.keys())
+        getattr(t, name_attr): {
+            n
+            for r in _type_references(t)
+            for n in _resolve_names(r, name_to_type, tuple(t.namespace))
+        }
+        - {getattr(t, name_attr)}
         for t in types
     }
 

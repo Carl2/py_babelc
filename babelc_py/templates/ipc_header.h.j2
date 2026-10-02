@@ -28,23 +28,11 @@
 {% endfor %}
 {% include "babel_helpers_last.j2" %}
 {% include "helpers.j2" %}
-{% for cont in containers %}
-{{ container_tpl.declaration(cont) }}
+{% for kind, item in ordered %}
+{% if kind == "container" %}{{ container_tpl.declaration(item) }}{% elif kind == "enum" %}{{ enum_tpl.declaration(item) }}{% else %}{{ struct_tpl.declaration(item) }}{% endif %}
 {% endfor %}
-{% for enum in enums %}
-{{ enum_tpl.declaration(enum) }}
-{% endfor %}
-{% for struct in structs %}
-{{ struct_tpl.declaration(struct) }}
-{% endfor %}
-{% for cont in containers %}
-{{ container_tpl.implementation(cont) }}
-{% endfor %}
-{% for enum in enums %}
-{{ enum_tpl.implementation(enum) }}
-{% endfor %}
-{% for struct in structs %}
-{{ struct_tpl.implementation(struct) }}
+{% for kind, item in ordered %}
+{% if kind == "container" %}{{ container_tpl.implementation(item) }}{% elif kind == "enum" %}{{ enum_tpl.implementation(item) }}{% else %}{{ struct_tpl.implementation(item) }}{% endif %}
 {% endfor %}
 {% for iface in interfaces %}
 {{ interface_tpl.stubs(iface) }}

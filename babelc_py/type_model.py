@@ -116,6 +116,7 @@ class ContainerType:
     element_type: str
     size: int | None = None
     optional_kind: str | None = None  # "std" or "boost" for optionals
+    key_type: str | None = None  # key type of a map
 
 
 @dataclass(frozen=True)

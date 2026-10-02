@@ -17,6 +17,7 @@ from typing import Any
 import jinja2
 from pymonad.maybe import Just, Maybe
 
+from babelc_py.clang_parser import _toposort
 from babelc_py.jinja_env import (
     build_guard_name,
     create_env,
@@ -98,6 +99,14 @@ class EnrichedContainer:
     is_simple_element: bool
     element_read_expr: str
     element_write_expr: str
+    key_wire: str = ""
+    value_wire: str = ""
+    pair_type: str = ""
+    pair_read: str = ""
+    pair_write: str = ""
+    opt_value_type: str = ""
+    opt_read: str = ""
+    opt_write: str = ""
 
 
 @dataclass(frozen=True)
@@ -348,8 +357,122 @@ def _qualified_name_for_ns(namespace: tuple[str, ...]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _elem_value_type(type_name: str, cu: CompilationUnit) -> str:
+    """C++ spelling of a value held in a map pair / optional."""
+    if _is_string(type_name):
+        return "std::string"
+    return _qualified_name_for(type_name, cu)
+
+
+def _elem_parts(
+    acc: str, type_name: str, cu: CompilationUnit, reading: bool
+) -> tuple[bool, str]:
+    """(is_complicated, text) for one element access ``acc``."""
+    if _is_complicated_field(type_name, cu):
+        ns = _namespace_for(type_name, cu)
+        op = "Read" if reading else "Write"
+        return True, (
+            f"{ns}::Ipc{op}Container<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"                theMessage,\n"
+            f"                {acc}\n"
+            f"            );"
+        )
+    enum = _get_enum(type_name, cu)
+    if reading:
+        if _is_string(type_name):
+            return False, f"&babel::ipc::StringReference({acc})"
+        if _is_bool(type_name):
+            return False, f"&babel::ipc::BooleanReference<Boolean>({acc})"
+        return False, f"&{acc}"
+    if _is_string(type_name):
+        return False, f"{acc}.c_str()"
+    if _is_bool(type_name):
+        return False, f"static_cast<Boolean>({acc})"
+    if enum is not None:
+        return False, f"static_cast<{enum.underlying_type}>({acc})"
+    return False, acc
+
+
+def _emit_parts(parts: list[tuple[bool, str]], reading: bool) -> str:
+    """Group consecutive simple parts into one getMessageArguments call."""
+    fn = "getMessageArguments" if reading else "appendMessageArguments"
+    out, run = [], []
+
+    def flush():
+        if run:
+            args = ",\n                ".join(run)
+            out.append(
+                f"            IpcPolicy::{fn}(\n"
+                f"                theMessage,\n                {args}\n            );"
+            )
+            run.clear()
+
+    for complicated, text in parts:
+        if complicated:
+            flush()
+            out.append("            " + text)
+        else:
+            run.append(text)
+    flush()
+    return "\n".join(out)
+
+
+def _uses_boolean_container(type_name: str, cu: CompilationUnit) -> bool:
+    """Maps and optionals have an ArrayView templated on Boolean."""
+    r = _lookup_type(type_name, cu)
+    return isinstance(r, ContainerType) and r.container_kind in ("map", "optional")
+
+
 def _enrich_container(cont: ContainerType, cu: CompilationUnit) -> EnrichedContainer:
     """Add rendering data to a ContainerType."""
+    if cont.container_kind == "map" and cont.key_type:
+        k, v = cont.key_type, cont.element_type
+        rd = [
+            _elem_parts("thisPair.first", k, cu, True),
+            _elem_parts("thisPair.second", v, cu, True),
+        ]
+        wr = [
+            _elem_parts("thisPair.first", k, cu, False),
+            _elem_parts("thisPair.second", v, cu, False),
+        ]
+        kw, vw = ipc_template_type(k, cu), ipc_template_type(v, cu)
+        return EnrichedContainer(
+            name=cont.name,
+            qualified_name=cont.qualified_name,
+            namespace=cont.namespace,
+            container_kind="map",
+            element_type=v,
+            element_type_qualified=_qualified_name_for(v, cu),
+            is_simple_element=False,
+            element_read_expr="",
+            element_write_expr="",
+            key_wire=kw,
+            value_wire=vw,
+            pair_type=(
+                f"std::pair<{_elem_value_type(k, cu)},{_elem_value_type(v, cu)}>"
+            ),
+            pair_read=_emit_parts(rd, True),
+            pair_write=_emit_parts(wr, False),
+        )
+    if cont.container_kind == "optional":
+        v = cont.element_type
+        return EnrichedContainer(
+            name=cont.name,
+            qualified_name=cont.qualified_name,
+            namespace=cont.namespace,
+            container_kind="optional",
+            element_type=v,
+            element_type_qualified=_qualified_name_for(v, cu),
+            is_simple_element=False,
+            element_read_expr="",
+            element_write_expr="",
+            value_wire=ipc_template_type(v, cu),
+            opt_value_type=_elem_value_type(v, cu),
+            opt_read=_emit_parts([_elem_parts("theValue", v, cu, True)], True),
+            opt_write=_emit_parts(
+                [_elem_parts("(*theOptional)", v, cu, False)], False
+            ),
+        )
     element_qn = _qualified_name_for(cont.element_type, cu)
     is_simple = not _is_complicated_field(cont.element_type, cu)
 
@@ -775,9 +898,13 @@ def _enrich_interface(
     # vtable_uses_boolean: true if any param maps to Boolean in vtable sig
     # (bool params → Boolean, struct params → _TupleView<Boolean,IpcPolicy>)
     vtable_boolean = any(
-        _is_bool(p.type_name) or _is_struct(p.type_name, cu)
+        any(
+            _is_bool(p.type_name)
+            or _is_struct(p.type_name, cu)
+            or _uses_boolean_container(p.type_name, cu)
+            for p in m.parameters
+        )
         for m in iface.methods
-        for p in m.parameters
     )
     return EnrichedInterface(
         name=iface.name,
@@ -860,7 +987,20 @@ def render_ipc_header(output_path: str) -> callable:
             ]
             container_kinds = _collect_container_kinds(cu)
 
+            # Containers, enums and structs may depend on each other: emit
+            # them in one dependency order.
+            by_qn = {
+                **{c.qualified_name: ("container", e)
+                   for c, e in zip(cu.containers, enriched_containers)},
+                **{t.qualified_name: ("enum", t) for t in cu.enums},
+                **{t.qualified_name: ("struct", e)
+                   for t, e in zip(cu.structs, enriched_structs)},
+            }
+            raw = [*cu.containers, *cu.enums, *cu.structs]
+            ordered = [by_qn[t.qualified_name] for t in _toposort(raw)]
+
             rendered = template.render(
+                ordered=ordered,
                 header_path=cu.header_path,
                 guard_name=build_guard_name(output_path),
                 enums=enriched_enums,

@@ -1,6 +1,12 @@
 {# Task 8: Container (varying-length) IPC — declaration and implementation. #}
 {# Context: cont (ContainerType), with resolved element info from ipc_generator #}
 {% macro declaration(cont) %}
+{% if cont.container_kind == "map" and cont.pair_type %}{{ map_declaration(cont) }}{% elif cont.container_kind == "optional" %}{{ optional_declaration(cont) }}{% else %}{{ vec_declaration(cont) }}{% endif %}
+{% endmacro %}
+{% macro implementation(cont) %}
+{% if cont.container_kind == "map" and cont.pair_type %}{{ map_implementation(cont) }}{% elif cont.container_kind == "optional" %}{{ optional_implementation(cont) }}{% else %}{{ vec_implementation(cont) }}{% endif %}
+{% endmacro %}
+{% macro vec_declaration(cont) %}
 #ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
 #define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
 
@@ -20,7 +26,7 @@
 
 #endif
 {% endmacro %}
-{% macro implementation(cont) %}
+{% macro vec_implementation(cont) %}
 #ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
 #define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
 
@@ -62,6 +68,125 @@
             {{ cont.element_write_expr }}
         }
 {% endif %}
+    }
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}
+
+{% macro map_declaration(cont) %}
+#ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
+#define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
+
+{{ cont|ns_open }}
+
+    template <typename Boolean,typename IpcPolicy>
+    using {{ cont.name }}_ArrayView = std::array<std::pair<{{ cont.key_wire }},{{ cont.value_wire }}>,1>;
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theMap );
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theMap );
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro map_implementation(cont) %}
+#ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+#define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+
+{{ cont|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theMap ) {
+        using TheIpcPair = std::pair<{{ cont.key_wire }},{{ cont.value_wire }}>;
+        using ThePair    = {{ cont.pair_type }};
+
+        typename IpcPolicy::template ReadContainerScope<{{ cont|qualified }}_ArrayView<Boolean,IpcPolicy>> theMapContainer( theMessage, false );
+
+        while (!IpcPolicy::AtEndOfContainer(theMessage)) {
+            typename IpcPolicy::template ReadContainerScope<TheIpcPair> thePairContainer( theMessage, false );
+
+            ThePair thisPair;
+
+{{ cont.pair_read }}
+
+            theMap.emplace( thisPair );
+        }
+    }
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theMap ) {
+        using TheIpcPair = std::pair<{{ cont.key_wire }},{{ cont.value_wire }}>;
+
+        typename IpcPolicy::template WriteContainerScope<{{ cont|qualified }}_ArrayView<Boolean,IpcPolicy>> theMapContainer( theMessage );
+
+        for (const auto &thisPair : theMap) {
+            typename IpcPolicy::template WriteContainerScope<TheIpcPair> thePairContainer( theMessage );
+
+{{ cont.pair_write }}
+        }
+    }
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro optional_declaration(cont) %}
+#ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
+#define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_DECLARATIONS
+
+{{ cont|ns_open }}
+
+    template <typename Boolean,typename IpcPolicy>
+    using {{ cont.name }}_ArrayView = std::array<{{ cont.value_wire }},1>;
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theOptional );
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theOptional );
+
+{{ cont|ns_close }}
+
+
+#endif
+{% endmacro %}
+{% macro optional_implementation(cont) %}
+#ifndef HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+#define HAVE_BABEL_IPC_{{ cont.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+
+{{ cont|ns_open }}
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theOptional ) {
+        typename IpcPolicy::template ReadContainerScope<std::array<{{ cont.value_wire }},1>> theContainer( theMessage, false );
+
+        {{ cont.opt_value_type }} theValue{};
+
+        if (IpcPolicy::AtEndOfContainer(theMessage)) {
+            theOptional = {{ cont|qualified }}();
+        } else {
+{{ cont.opt_read }}
+
+            if (!IpcPolicy::AtEndOfContainer(theMessage)) throw std::invalid_argument("Got more than one optional object");
+            theOptional = theValue;
+        }
+    }
+
+    template <class IpcPolicy, typename Boolean, typename MessageT>
+    void IpcWriteContainer(  MessageT &&theMessage, const {{ cont|qualified }} &theOptional ) {
+        typename IpcPolicy::template WriteContainerScope<std::array<{{ cont.value_wire }},1>> theContainer( theMessage );
+
+        if (theOptional) {
+{{ cont.opt_write }}
+        }
     }
 
 {{ cont|ns_close }}

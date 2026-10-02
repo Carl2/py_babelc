@@ -230,3 +230,27 @@ def test_ipc_matches_babelc(header, reference, extra_args, tmp_path, system_incl
             pytest.fail(
                 f"{header}: Length differs: {len(actual_lines)} vs {len(expected_lines)}"
             )
+
+
+def test_map_optional_aliases_compile(tmp_path):
+    """Alias to std::map / boost::optional gets dedicated IPC code that compiles."""
+    import subprocess
+
+    from tests.test_json_correctness import boost_include
+
+    inc = boost_include()
+    if not inc:
+        pytest.skip("boost not available")
+    hdr = HEADERS_DIR / "ipc_map_optional.h"
+    out = tmp_path / "o.ipc.h"
+    from babelc_py.__main__ import generate
+
+    assert generate(str(hdr), str(out), "ipc", discover_system_cpp_includes() + [f"-I{inc}"], 17) == 0
+    text = out.read_text()
+    assert "theMap.emplace" in text and "Got more than one optional" in text
+    r = subprocess.run(
+        ["g++", "-std=c++17", "-fsyntax-only", f"-I{inc}", "-include", str(out),
+         "-x", "c++", "/dev/null"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr[:2000]
