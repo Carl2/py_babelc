@@ -98,6 +98,18 @@ def compiler_includes(compiler, gcc_opts):
     return ["-nostdinc++"] + [x for d in dirs for x in ("-isystem", d)]
 
 
+def compiler_target(compiler, gcc_opts):
+    """Return ``--target=<triple>`` for a (cross) compiler, or None."""
+    try:
+        out = subprocess.run(
+            [*compiler.split(), *gcc_opts, "-dumpmachine"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return f"--target={out}" if out else None
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     try:
@@ -111,8 +123,10 @@ def main(argv=None):
     system = compiler_includes(opts["compiler"], opts["gcc"])
     if system is None:
         system = discover_system_cpp_includes()
+    target = compiler_target(opts["compiler"], opts["gcc"])
     out = output_path(header, opts["output"], opts["directory"])
-    return generate(header, out, opts["output"], system + opts["forward"],
+    return generate(header, out, opts["output"],
+                    system + ([target] if target else []) + opts["forward"],
                     opts["std"] or 20)
 
 
