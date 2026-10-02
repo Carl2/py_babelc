@@ -36,3 +36,15 @@ def test_type_json_generates_header(tmp_path):
 def test_unknown_type_rejected(tmp_path):
     r = _run(str(HEADERS_DIR / "addressbook.h"), "-o", str(tmp_path / "x.h"), "--type", "xml")
     assert r.returncode != 0
+
+
+def test_referenced_types_from_included_header_are_generated(tmp_path):
+    hdr = HEADERS_DIR / "included" / "service.h"
+    for kind in ("json", "ipc"):
+        out = tmp_path / f"service.{kind}.h"
+        r = _run(str(hdr), "-o", str(out), "--type", kind)
+        assert r.returncode == 0, r.stderr
+        text = out.read_text()
+        assert "TriggerId" in text
+        assert "Unused" not in text.replace("theFirstUnused", "")
+        assert "Logger_TupleView" not in text

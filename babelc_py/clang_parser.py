@@ -509,11 +509,18 @@ def _is_from_main_file(cursor: Cursor, main_file: str) -> bool:
     return loc.file.name == main_file
 
 
+def _is_user_header(cursor: Cursor) -> bool:
+    """True for cursors located in any non-system file."""
+    loc = cursor.location
+    return loc.file is not None and not loc.is_in_system_header
+
+
 def _walk_cursor(
     cursor: Cursor,
     namespace: tuple[str, ...],
     main_file: str,
     result: dict,
+    accept=None,
 ) -> None:
     """Recursively walk the AST, collecting types into result dict.
 
@@ -521,12 +528,17 @@ def _walk_cursor(
     aliases, containers, pointers, variants.
     """
     for child in cursor.get_children():
-        if not _is_from_main_file(child, main_file):
+        if accept is None:
+            if not _is_from_main_file(child, main_file):
+                continue
+        elif child.kind != CursorKind.NAMESPACE and not accept(child):
             continue
 
         if child.kind == CursorKind.NAMESPACE:
             ns_name = child.spelling
-            _walk_cursor(child, namespace + (ns_name,), main_file, result)
+            _walk_cursor(
+                child, namespace + (ns_name,), main_file, result, accept
+            )
 
         elif child.kind == CursorKind.ENUM_DECL:
             r = _extract_enum(child, namespace)
@@ -576,6 +588,56 @@ def _walk_cursor(
                             annotations=alias.annotations,
                         )
                         result["variants"].append(resolved)
+
+
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*")
+_CATEGORIES = (
+    "enums", "structs", "interfaces", "aliases",
+    "containers", "pointers", "variants",
+)
+
+
+def _resolve_names(text: str, pool: dict[str, object], ns: tuple[str, ...]) -> set[str]:
+    """Map identifiers in a type spelling to qualified names in pool."""
+    found: set[str] = set()
+    for ident in _IDENT_RE.findall(text or ""):
+        ident = ident.lstrip(":")
+        # Try enclosing namespaces from innermost to outermost.
+        for depth in range(len(ns), -1, -1):
+            cand = "::".join(ns[:depth] + (ident,))
+            if cand in pool:
+                found.add(cand)
+                break
+        else:
+            if ident in pool:
+                found.add(ident)
+    return found
+
+
+def _add_referenced_from_includes(main: dict, pool: dict) -> None:
+    """Add types from included user headers referenced by main-file types.
+
+    Mirrors the original babelc: included types are followed lazily, only
+    when referenced by name. Included interfaces are never added.
+    """
+    by_name: dict[str, tuple[str, object]] = {}
+    for cat in _CATEGORIES:
+        if cat == "interfaces":
+            continue
+        for t in pool[cat]:
+            by_name.setdefault(t.qualified_name, (cat, t))
+    have = {t.qualified_name for c in _CATEGORIES for t in main[c]}
+    work = [t for c in _CATEGORIES for t in main[c]]
+    while work:
+        t = work.pop()
+        for ref in _type_references(t):
+            for name in _resolve_names(ref, by_name, tuple(t.namespace)):
+                if name in have:
+                    continue
+                have.add(name)
+                cat, obj = by_name[name]
+                main[cat].append(obj)
+                work.append(obj)
 
 
 def _collect_namespaces(result: dict) -> tuple[str, ...]:
@@ -675,6 +737,10 @@ def extract_type_model(ctx: dict) -> Maybe:
         }
 
         _walk_cursor(tu.cursor, (), main_file, result)
+
+        pool: dict[str, list] = {c: [] for c in _CATEGORIES}
+        _walk_cursor(tu.cursor, (), main_file, pool, _is_user_header)
+        _add_referenced_from_includes(result, pool)
 
         # Dependency ordering for structs, aliases, containers
         result["enums"] = _toposort(result["enums"])
