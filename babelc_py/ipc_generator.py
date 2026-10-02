@@ -525,12 +525,7 @@ def _enrich_container(cont: ContainerType, cu: CompilationUnit) -> EnrichedConta
 
 def _enrich_field(field: Field, struct_qn: str, cu: CompilationUnit) -> EnrichedField:
     """Add rendering data to a Field."""
-    # Bug 2 fix: For container-typed fields in _TupleView, babelc uses the raw
-    # qualified name (e.g. ::ns::PhoneNumbers) not the _ArrayView form.
-    if _is_container(field.type_name, cu):
-        wire = _qualified_name_for(field.type_name, cu)
-    else:
-        wire = ipc_template_type(field.type_name, cu)
+    wire = ipc_template_type(field.type_name, cu)
     complicated = _is_complicated_field(field.type_name, cu)
     read = _read_expr_for_field(field.name, field.type_name, struct_qn, cu)
     write = _write_expr_for_field(field.name, field.type_name, cu)
