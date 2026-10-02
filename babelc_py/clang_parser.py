@@ -108,14 +108,16 @@ def discover_system_cpp_includes() -> list[str]:
 def parse_with_clang(ctx: dict) -> Maybe:
     """Parse a rewritten header with libclang.
 
-    Reads ctx["rewritten_header_path"] and optional ctx["clang_args"].
+    Reads ctx["rewritten_header_path"] and optional ctx["clang_args"] and
+    ctx["cpp_std"] (C++ standard year, default 20).
     On success adds ctx["translation_unit"] and ctx["index"].
     """
     try:
         index = Index.create()
         tu = index.parse(
             ctx["rewritten_header_path"],
-            args=["-std=c++20", "-x", "c++"] + ctx.get("clang_args", []),
+            args=[f"-std=c++{ctx.get('cpp_std', 20)}", "-x", "c++"]
+            + ctx.get("clang_args", []),
             options=(
                 TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
                 | TranslationUnit.PARSE_SKIP_FUNCTION_BODIES

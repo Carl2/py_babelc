@@ -28,7 +28,26 @@ def main():
         default=[],
         help="Extra argument passed to libclang (repeatable)",
     )
+    parser.add_argument(
+        "-t",
+        "--type",
+        choices=("ipc", "json"),
+        default="ipc",
+        help="Kind of output to generate (default: ipc)",
+    )
+    parser.add_argument(
+        "--cpp-std",
+        type=int,
+        default=20,
+        metavar="YEAR",
+        help="C++ standard of the generated code and of the parse: 14, 17, 20, "
+        "... (default: 20). 14 selects boost:: instead of std:: adapters.",
+    )
     args = parser.parse_args()
+
+    if args.type == "json":
+        print("py-babelc: --type json is not implemented yet", file=sys.stderr)
+        sys.exit(2)
 
     system_includes = discover_system_cpp_includes()
 
@@ -38,6 +57,7 @@ def main():
                 {
                     "header_path": args.header,
                     "clang_args": system_includes + args.clang_arg,
+                    "cpp_std": args.cpp_std,
                 }
             )
             .bind(rewrite_babelc_attributes)

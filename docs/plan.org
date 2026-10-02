@@ -347,7 +347,7 @@
    Remaining: manual testing with sysroot-dependent headers (priority B).
    See ~docs/task12_plan.org~ for full details.
 
-** TODO [#A] Task 13: JSON generator — research & design (~task13_plan.org~)
+** DONE [#A] Task 13: JSON generator — research & design (~task13_plan.org~)
    Study the babelc JSON generator (~babel_plugins_jsongenerator.cpp~, 1330
    lines) and produce a design document covering:
    - What the generated ~.json.h~ contains (structure, sections)

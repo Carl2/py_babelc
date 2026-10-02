@@ -8,7 +8,7 @@
 
 * Status
 
-  Design draft, *awaiting approval* before Tasks 14-17 start.
+  Design *approved* (2026-10-02). Tasks 14-17 may start.
 
   Sources studied:
   - Original generator: ~babelc/src/plugins/generators/babel_plugins_jsongenerator.cpp~
