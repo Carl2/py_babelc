@@ -191,3 +191,12 @@ def test_temp_file_removed_by_cleanup(tmp_path):
     cleanup_temp_files()
     assert not tmp.exists()
     assert h.exists()
+
+
+def test_trailing_alias_attribute_is_moved_before_equals():
+    from babelc_py.pre_process import _move_alias_attributes
+
+    src = "using V = boost::variant<double,\n    std::string> [[babelc::intentionally_incomplete_variant]];  // x\n"
+    out = _move_alias_attributes(src)
+    assert out.startswith("using V [[babelc::intentionally_incomplete_variant]] = boost::variant<double,")
+    assert out.count("\n") == src.count("\n")

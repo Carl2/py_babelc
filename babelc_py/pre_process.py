@@ -64,6 +64,21 @@ def _extract_interface_names(content: str) -> dict[str, str]:
     return result
 
 
+ALIAS_TRAILING_ATTR_RE = re.compile(
+    r"(\busing\s+\w+)(\s*=[^;{}]*?)\s*(\[\[\s*babelc::[^\]]*\]\])\s*;"
+)
+
+
+def _move_alias_attributes(content: str) -> str:
+    """Move ``using X = T [[babelc::a]];`` to ``using X [[babelc::a]] = T;``.
+
+    The trailing form attaches the attribute to the type, where clang rejects
+    ``annotate``; the original babelc reads it textually. The alias-name
+    position is valid and keeps the line count unchanged.
+    """
+    return ALIAS_TRAILING_ATTR_RE.sub(r"\1 \3\2;", content)
+
+
 def rewrite_babelc_attributes(ctx: dict) -> Maybe:
     """Rewrite [[babelc::X]] attributes to [[clang::annotate(...)]].
 
@@ -84,6 +99,7 @@ def rewrite_babelc_attributes(ctx: dict) -> Maybe:
 
     # Remove interface_name annotations (they can't be applied as clang::annotate on types)
     rewritten = INTERFACE_NAME_RE.sub("};", content)
+    rewritten = _move_alias_attributes(rewritten)
 
     # Rewrite remaining babelc attributes to clang::annotate
     rewritten, count = BABELC_ATTR_RE.subn(_replace_attr, rewritten)
