@@ -465,7 +465,17 @@ def _extract_default_value(field_cursor: Cursor) -> str | None:
     A field has an initializer exactly when one of its children is an
     expression (type references, namespace references and attributes are
     not initializers).
+
+    Parity with the original babelc: only the ``= init`` form counts as a
+    default. A brace initialiser (``T x{};``) is reported as no default, so
+    the JSON generator treats such a field as required, as the original does.
     """
+    toks = [t.spelling for t in field_cursor.get_tokens()]
+    name = field_cursor.spelling
+    if name in toks:
+        i = len(toks) - 1 - toks[::-1].index(name)
+        if i + 1 < len(toks) and toks[i + 1] == "{":
+            return None
     for child in field_cursor.get_children():
         if child.kind.is_expression():
             tokens = list(child.get_tokens())

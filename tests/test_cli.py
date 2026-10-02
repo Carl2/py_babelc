@@ -73,3 +73,19 @@ def test_json_skips_included_types_only_used_by_interfaces(tmp_path):
     r = _run(str(hdr), "-o", str(out2))
     assert r.returncode == 0, r.stderr
     assert "OnlyIface" in out2.read_text()
+
+
+def test_brace_initialised_field_is_required_in_json(tmp_path):
+    hdr = tmp_path / "b.h"
+    hdr.write_text(
+        "#include <cstdint>\nnamespace n { struct S {\n"
+        "  double a{};\n  double b = 1.0;\n  std::uint32_t c; }; }\n"
+    )
+    out = tmp_path / "b.json.h"
+    r = _run(str(hdr), "-o", str(out), "--type", "json")
+    assert r.returncode == 0, r.stderr
+    text = out.read_text()
+    assert "theRequiredFields" in text
+    import re
+    m = re.search(r"theRequiredFields\[\]\s*=\s*\{([^}]*)\}", text)
+    assert m and '"a"' in m.group(1) and '"c"' in m.group(1) and '"b"' not in m.group(1)
