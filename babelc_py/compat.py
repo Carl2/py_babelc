@@ -76,6 +76,19 @@ def output_path(header, kind, directory):
     return os.path.join(out_dir, f"{stem}.{kind}{ext}")
 
 
+def _user_include_dirs(opts):
+    """Directories given with -I/-iquote; these must stay non-system."""
+    out, it = set(), iter(opts)
+    for o in it:
+        for flag in ("-I", "-iquote"):
+            if o == flag:
+                o = flag + next(it, "")
+            if o.startswith(flag) and len(o) > len(flag):
+                out.add(os.path.realpath(o[len(flag):]))
+                break
+    return out
+
+
 def compiler_includes(compiler, gcc_opts):
     """Ask the compiler for its C++ include search path (as -isystem args)."""
     try:
@@ -93,6 +106,8 @@ def compiler_includes(compiler, gcc_opts):
             break
         elif on and line.startswith(" "):
             dirs.append(line.strip())
+    user = _user_include_dirs(gcc_opts)
+    dirs = [d for d in dirs if os.path.realpath(d) not in user]
     if not dirs:
         return None
     return ["-nostdinc++"] + [x for d in dirs for x in ("-isystem", d)]

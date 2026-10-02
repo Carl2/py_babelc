@@ -69,6 +69,17 @@ ALIAS_TRAILING_ATTR_RE = re.compile(
 )
 
 
+ENUM_TRAILING_ATTR_RE = re.compile(
+    r"(\benum\s+(?:class\s+|struct\s+)?)(\w+)(\s*:\s*[\w:\s]*?)\s*"
+    r"(\[\[\s*babelc::[^\]]*\]\])\s*\{"
+)
+
+
+def _move_enum_attributes(content: str) -> str:
+    """Move ``enum E : T [[babelc::a]] {`` to ``enum [[babelc::a]] E : T {``."""
+    return ENUM_TRAILING_ATTR_RE.sub(r"\1\4 \2\3 {", content)
+
+
 def _move_alias_attributes(content: str) -> str:
     """Move ``using X = T [[babelc::a]];`` to ``using X [[babelc::a]] = T;``.
 
@@ -100,6 +111,7 @@ def rewrite_babelc_attributes(ctx: dict) -> Maybe:
     # Remove interface_name annotations (they can't be applied as clang::annotate on types)
     rewritten = INTERFACE_NAME_RE.sub("};", content)
     rewritten = _move_alias_attributes(rewritten)
+    rewritten = _move_enum_attributes(rewritten)
 
     # Rewrite remaining babelc attributes to clang::annotate
     rewritten, count = BABELC_ATTR_RE.subn(_replace_attr, rewritten)

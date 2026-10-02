@@ -200,3 +200,12 @@ def test_trailing_alias_attribute_is_moved_before_equals():
     out = _move_alias_attributes(src)
     assert out.startswith("using V [[babelc::intentionally_incomplete_variant]] = boost::variant<double,")
     assert out.count("\n") == src.count("\n")
+
+
+def test_enum_trailing_attribute_moved():
+    from babelc_py.pre_process import _move_enum_attributes
+
+    out = _move_enum_attributes(
+        'enum struct SD : std::int32_t\n    [[babelc::ipc_type("FD")]]{};'
+    )
+    assert out.startswith('enum struct [[babelc::ipc_type("FD")]] SD : std::int32_t {')

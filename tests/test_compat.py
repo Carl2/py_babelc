@@ -40,3 +40,10 @@ def test_end_to_end(tmp_path):
 
 def test_missing_header(tmp_path):
     assert compat.main(["nope.h"]) == 2
+
+
+def test_user_include_dirs_excluded():
+    from babelc_py.compat import _user_include_dirs
+    import os
+    assert _user_include_dirs(["-I/a", "-I", "/b", "-iquote", "/c", "-O2"]) == {
+        os.path.realpath(x) for x in ("/a", "/b", "/c")}
