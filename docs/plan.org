@@ -378,7 +378,7 @@
 
    These are large but static — copy from babelc reference output.
 
-** TODO [#A] Task 15: JSON generator — per-type templates
+** DONE [#A] Task 15: JSON generator — per-type templates
    Create the per-type templates:
    - ~json_enum.j2~ — per enum: ~interpretJSON~ (string→enum lookup table for
      named enums, numeric cast for empty enums) + ~writeJSON~ (enum→string
@@ -388,6 +388,10 @@
      ~writeJSON~ (compact/pretty output with label sets)
     - Variant sanity check (JSON type coverage warnings) is done in Python,
       no template (original emits no variant code).
+   Implemented in ~babelc_py/json_generator.py~ (~prepare_struct~, ~render_declaration/implementation~,
+   ~check_variant~), templates ~json_common.j2~, ~json_enum.j2~, ~json_struct.j2~;
+   tests in ~tests/test_json_types.py~ (g++ round trip at C++14/17/20).
+   Deviation: empty structs emit valid code (the original emits invalid C++).
 
 ** TODO [#A] Task 16: ~json_generator.py~ — orchestration + CLI extension
    Implement ~json_generator.py~:

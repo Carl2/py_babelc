@@ -1,0 +1,104 @@
+{# Task 15: per-struct JSON declarations and implementations. #}
+{# Context: t = StructType (fields: name, required, req_index, label, pad), cpp_std #}
+{% from "json_common.j2" import json_block, decls %}
+{% macro declaration(t, cpp_std) %}
+{% call json_block(t, "DECLARATIONS", cpp_std) %}
+{{ decls(t) }}
+{% endcall %}
+{% endmacro %}
+{% macro implementation(t, cpp_std) %}
+{% call json_block(t, "IMPLEMENTATIONS", cpp_std) %}
+{% set qn = t|qualified %}
+{% set required = t.fields|selectattr("required")|list %}
+    template <class CharT>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ t.name }} &theValue) {
+        using StringType = std::basic_string<CharT>;
+
+{% if required %}
+        static const CharT * const theRequiredFields[] = {
+{% for f in required %}
+            BABEL_JSON_PARSER_STRING_LITERAL(CharT,"{{ f.name }}"){{ "," if not loop.last }}
+{% endfor %}
+        };
+        bool       theUsedRequiredFields[sizeof(theRequiredFields)/sizeof(theRequiredFields[0])]{};
+
+{% endif %}
+        StringType theExtraFields;
+        #ifndef __clang_analyzer__
+            {{ t.name }} theActual;
+        #else
+            {{ t.name }} theActual {};
+        #endif
+
+        for (const auto &thePair : BABEL_JSON_PARSER_UPCAST( Object<std::basic_string<CharT>>,theJSONValue ).itsValue) {
+{% for f in t.fields %}
+            {{ "if" if loop.first else "else if" }} (thePair.first == {% if f.required %}theRequiredFields[{{ f.req_index }}]{% else %}BABEL_JSON_PARSER_STRING_LITERAL(CharT,"{{ f.name }}"){% endif %}) {
+                interpretJSON<CharT>( thePair.second, theActual.{{ f.name }} );
+{% if f.required %}
+                theUsedRequiredFields[{{ f.req_index }}] = true;
+{% endif %}
+            }
+{% endfor %}
+            {{ "else " if t.fields }}{
+                if (theExtraFields.empty()) { theExtraFields.append(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"unknown field(s):")); }
+                theExtraFields.append(BABEL_JSON_PARSER_STRING_LITERAL(CharT," ")).append(thePair.first);
+            }
+        }
+
+        StringType theMissingFields;
+{% if required %}
+
+        for (std::size_t i = 0; i < sizeof(theUsedRequiredFields)/sizeof(theUsedRequiredFields[0]); i++) {
+            if (!theUsedRequiredFields[i]) {
+                if (theMissingFields.empty()) { theMissingFields.append(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"missing field(s):")); }
+                theMissingFields.append(BABEL_JSON_PARSER_STRING_LITERAL(CharT," ")).append(theRequiredFields[i]);
+            }
+        }
+{% endif %}
+
+        if (!theMissingFields.empty() || !theExtraFields.empty()) {
+            using CharTraits = ::babel::JSON::parser::CharTraits<char>;
+            if (!theMissingFields.empty() && !theExtraFields.empty()) { theMissingFields.append(BABEL_JSON_PARSER_STRING_LITERAL(CharT,", ")); }
+            throw std::invalid_argument(theJSONValue->getLocation() + "Type {{ qn }} has errors: " + CharTraits::adjust(theMissingFields) + CharTraits::adjust(theExtraFields) );
+        }
+
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+        theValue = std::move(theActual);
+    #pragma GCC diagnostic pop
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent ) {
+{% if t.fields %}
+        static const CharT * const theLabelSet[2][{{ t.fields|length }}] = {
+            {
+{% for f in t.fields %}
+                BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\"{{ f.name }}\":"){{ "," if not loop.last }}
+{% endfor %}
+            },
+            {
+{% for f in t.fields %}
+                BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\"{{ f.name }}\"{{ f.pad }}: "){{ "," if not loop.last }}
+{% endfor %}
+            }
+        };
+        const auto theContentIndent = theIndent.next();
+        const auto theNextIndent    = theContentIndent.next();
+        const auto theLabels        = theLabelSet[theIndent.isActive()];
+        theStream << '{' << theContentIndent;
+{% for f in t.fields %}
+        writeJSON( theStream << theLabels[{{ loop.index0 }}], theValue.{{ f.name }}, theNextIndent ){{ " << ',' << theContentIndent" if not loop.last else " << theIndent" }};
+{% endfor %}
+        theStream << '}';
+{% else %}
+        static_cast<void>(theValue);
+        static_cast<void>(theIndent);
+        theStream << '{' << '}';
+{% endif %}
+        return theStream;
+    }
+{% endcall %}
+{% endmacro %}

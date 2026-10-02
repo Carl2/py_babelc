@@ -1,0 +1,32 @@
+{# Shared wrapper for per-type JSON blocks: guard, namespace, using-declarations. #}
+{# Usage: {% call json_block(t, "DECLARATIONS", cpp_std) %}...{% endcall %} #}
+{% macro json_block(t, kind, cpp_std) %}
+#ifndef HAVE_BABEL_JSON_{{ t.qualified_name|guard_macro }}_{{ kind }}
+#define HAVE_BABEL_JSON_{{ t.qualified_name|guard_macro }}_{{ kind }}
+
+{% if t.namespace %}
+{{ ns_begin(t.namespace, cpp_std) }}
+
+{% endif %}
+    using babel::JSON::readJSON;
+    using babel::JSON::writeJSON;
+    using babel::JSON::interpretJSON;
+
+{{ caller() }}
+{% if t.namespace %}
+
+{{ ns_end(t.namespace, cpp_std) }}
+{% endif %}
+
+
+#endif
+{% endmacro %}
+{% macro decls(t) %}
+    template <class CharT>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ t.name }} &theValue);
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent );
+{% endmacro %}

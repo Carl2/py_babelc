@@ -1,0 +1,61 @@
+{# Task 15: per-enum JSON declarations and implementations. #}
+{# Context: t = EnumType (enumerators: name), cpp_std #}
+{% from "json_common.j2" import json_block, decls %}
+{% macro declaration(t, cpp_std) %}
+{% call json_block(t, "DECLARATIONS", cpp_std) %}
+{{ decls(t) }}
+{% endcall %}
+{% endmacro %}
+{% macro implementation(t, cpp_std) %}
+{% call json_block(t, "IMPLEMENTATIONS", cpp_std) %}
+{% set qn = t|qualified %}
+{% if t.enumerators|length == 0 %}
+    template <class CharT>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ t.name }} &theValue) {
+        theValue = static_cast<{{ qn }}>(BABEL_JSON_PARSER_UPCAST(Number<std::basic_string<CharT>>,theJSONValue).template getNumericValue<std::underlying_type_t<{{ qn }}>>());
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent ) {
+        return writeJSON(theStream, static_cast<std::underlying_type_t<{{ qn }}>>(theValue), theIndent);
+    }
+{% else %}
+    template <class CharT>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ t.name }} &theValue) {
+        static const struct Lookup { {{ qn }} itsValue; const CharT *itsImage; } theLookupTable[] = {
+{% for e in t.enumerators %}
+            { {{ qn }}::{{ e.name }}, BABEL_JSON_PARSER_STRING_LITERAL(CharT,"{{ e.name }}") }{{ "," if not loop.last }}
+{% endfor %}
+        };
+
+        const auto &theActual = BABEL_JSON_PARSER_UPCAST(String<std::basic_string<CharT>>,theJSONValue).itsValue;
+
+        for (const auto &thePair : theLookupTable) {
+            if (thePair.itsImage == theActual) {
+                theValue = thePair.itsValue;
+                return;
+            }
+        }
+        throw std::invalid_argument(theJSONValue->getLocation() + ::babel::JSON::parser::CharTraits<char>::adjust(theActual) + " is not a valid value for {{ qn }}" );
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent ) {
+        switch (theValue) {
+{% for e in t.enumerators %}
+        case {{ t.name }}::{{ e.name }}: {
+            static const CharT * const theImage = BABEL_JSON_PARSER_STRING_LITERAL(CharT,"{{ e.name }}");
+            return writeJSON( theStream, theImage, (theImage+{{ e.name|length }}), theIndent );
+        }
+{% endfor %}
+        }
+        (writeJSON( theStream << BABEL_JSON_PARSER_STRING_LITERAL(CharT,"Invalid {{ qn }} ("), static_cast<std::underlying_type_t<{{ qn }}>>(theValue), theIndent ) << BABEL_JSON_PARSER_STRING_LITERAL(CharT,")")).setstate(std::ios_base::failbit);
+        return theStream;
+    }
+{% endif %}
+{% endcall %}
+{% endmacro %}
