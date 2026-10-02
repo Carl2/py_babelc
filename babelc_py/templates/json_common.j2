@@ -30,3 +30,11 @@
     std::basic_ostream<CharT,Traits>&
     writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent );
 {% endmacro %}
+{% macro using_block(usings) %}
+{% for u in usings %}
+    using {{ u }}readJSON;
+    using {{ u }}writeJSON;
+    using {{ u }}interpretJSON;
+
+{% endfor %}
+{% endmacro %}

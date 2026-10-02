@@ -1,16 +1,16 @@
 {# Task 15: per-struct JSON declarations and implementations. #}
 {# Context: t = StructType (fields: name, required, req_index, label, pad), cpp_std #}
-{% from "json_common.j2" import json_block, decls %}
+{% from "json_common.j2" import json_block, decls, using_block %}
 {% macro declaration(t, cpp_std) %}
 {% call json_block(t, "DECLARATIONS", cpp_std) %}
 {{ decls(t) }}
 {% endcall %}
 {% endmacro %}
-{% macro implementation(t, cpp_std) %}
+{% macro implementation(t, cpp_std, usings=[]) %}
 {% call json_block(t, "IMPLEMENTATIONS", cpp_std) %}
 {% set qn = t|qualified %}
 {% set required = t.fields|selectattr("required")|list %}
-    template <class CharT>
+{{ using_block(usings) }}    template <class CharT>
     void
     interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ t.name }} &theValue) {
         using StringType = std::basic_string<CharT>;
@@ -69,7 +69,7 @@
     #pragma GCC diagnostic pop
     }
 
-    template <class CharT, class Traits>
+{{ using_block(usings) }}    template <class CharT, class Traits>
     std::basic_ostream<CharT,Traits>&
     writeJSON( std::basic_ostream<CharT,Traits>&theStream, const {{ t.name }} &theValue, babel::JSON::Indent theIndent ) {
 {% if t.fields %}

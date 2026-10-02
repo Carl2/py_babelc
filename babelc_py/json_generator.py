@@ -64,9 +64,9 @@ def prepare_struct(struct: StructType) -> JsonStruct:
     return JsonStruct(struct.name, struct.qualified_name, struct.namespace, tuple(fields))
 
 
-def _render(template: str, macro: str, obj: object, cpp_std: int) -> str:
+def _render(template: str, macro: str, obj: object, cpp_std: int, *extra) -> str:
     module = create_env().get_template(template).make_module()
-    return getattr(module, macro)(obj, cpp_std)
+    return getattr(module, macro)(obj, cpp_std, *extra)
 
 
 def render_declaration(type_obj: EnumType | StructType, cpp_std: int = 20) -> str:
@@ -76,11 +76,46 @@ def render_declaration(type_obj: EnumType | StructType, cpp_std: int = 20) -> st
     return _render("json_struct.j2", "declaration", prepare_struct(type_obj), cpp_std)
 
 
-def render_implementation(type_obj: EnumType | StructType, cpp_std: int = 20) -> str:
-    """Render the JSON implementation block of an enum or struct."""
+def render_implementation(
+    type_obj: EnumType | StructType, cpp_std: int = 20, usings: tuple[str, ...] = ()
+) -> str:
+    """Render the JSON implementation block of an enum or struct.
+
+    usings: namespace prefixes (``::a::b::``) whose readJSON/writeJSON/
+    interpretJSON are made visible, as the original babelc does.
+    """
     if isinstance(type_obj, EnumType):
-        return _render("json_enum.j2", "implementation", type_obj, cpp_std)
-    return _render("json_struct.j2", "implementation", prepare_struct(type_obj), cpp_std)
+        return _render("json_enum.j2", "implementation", type_obj, cpp_std, list(usings))
+    return _render(
+        "json_struct.j2", "implementation", prepare_struct(type_obj), cpp_std, list(usings)
+    )
+
+
+def referred_namespaces(type_obj: object, cu: CompilationUnit) -> tuple[str, ...]:
+    """Namespaces (``::a::b::``) of other handled types transitively referenced."""
+    pool = {
+        t.qualified_name: t
+        for cat in (cu.enums, cu.structs, cu.aliases, cu.containers,
+                    cu.pointers, cu.variants)
+        for t in cat
+    }
+    handled = {t.qualified_name for t in (*cu.enums, *cu.structs)}
+    seen: set[str] = set()
+    work = [type_obj]
+    while work:
+        t = work.pop()
+        for ref in _type_references(t):
+            for n in _resolve_names(ref, pool, tuple(t.namespace)):
+                if n not in seen:
+                    seen.add(n)
+                    work.append(pool[n])
+    own = tuple(type_obj.namespace)
+    out = {
+        "::" + "".join(p + "::" for p in pool[n].namespace)
+        for n in seen
+        if n in handled and tuple(pool[n].namespace) != own
+    }
+    return tuple(sorted(out))
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +297,10 @@ def render_json_header(output_path: str) -> callable:
                     optional_adapters=optionals,
                     variant_adapters=variants,
                     type_declarations=[render_declaration(t, cpp_std) for t in types],
-                    type_implementations=[render_implementation(t, cpp_std) for t in types],
+                    type_implementations=[
+                        render_implementation(t, cpp_std, referred_namespaces(t, cu))
+                        for t in types
+                    ],
                 )
             )
             return Just(
