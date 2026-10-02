@@ -356,7 +356,7 @@
    - Generic predefined templates (arithmetic, string, bool, containers,
      optionals, variants, smart pointers)
    - Per-type ~interpretJSON~ and ~writeJSON~ template generation for structs and enums
-   - Variant sanity checking and delegation
+    - Variant sanity checking (JSON generator emits no variant code itself)
    - Template file mapping (which Jinja2 templates produce which sections)
    - Differences from the IPC generator (JSON handles *all types except
      interfaces*; IPC handles *all types including interfaces*)
@@ -372,7 +372,10 @@
      shared structure with IPC but different guard/namespace context
    - ~json_predefined.j2~ — generic ~interpretJSON~/~writeJSON~ templates for:
      arithmetic types, ~std::string~, ~bool~, containers (vector/list/array),
-     map containers, optional types, smart pointers, variants
+      map containers, optional types, smart pointers, variants.
+      Optional/variant adapters use ~std::~ when ~--cpp-std~ >= 17 (default 20)
+      and ~boost::~ when ~--cpp-std=14~ (matches original).
+
    These are large but static — copy from babelc reference output.
 
 ** TODO [#A] Task 15: JSON generator — per-type templates
@@ -383,8 +386,8 @@
    - ~json_struct.j2~ — per struct: ~interpretJSON~ (iterate JSON object fields,
      required/optional field tracking, error on unknown/missing fields) +
      ~writeJSON~ (compact/pretty output with label sets)
-   - ~json_variant.j2~ — per variant: sanity check (JSON type coverage
-     warnings), delegation to generic variant templates
+    - Variant sanity check (JSON type coverage warnings) is done in Python,
+      no template (original emits no variant code).
 
 ** TODO [#A] Task 16: ~json_generator.py~ — orchestration + CLI extension
    Implement ~json_generator.py~:
@@ -392,14 +395,19 @@
    - Type closure computation (transitive dependencies of all non-interface types)
    - ~render_json_header(output_path)~ curried pipeline step
    Extend ~__main__.py~ CLI:
-   - Add ~--type~ / ~-t~ argument: ~ipc~ (default) or ~json~
+    - Add ~--type~ / ~-t~ argument: ~ipc~ (default) or ~json~
+    - Add ~--cpp-std~ (default 20; 14 selects boost adapters); also feeds
+      libclang ~-std=~ (currently hardcoded in ~clang_parser.py~)
+
    - Route to ~render_ipc_header~ or ~render_json_header~ based on type
    - JSON mode should *not* require interfaces (unlike IPC which mandates them)
 
 ** TODO [#B] Task 17: Integration tests — JSON reference diff
    Capture reference output: run babelc in JSON mode on ~addressbook.h~ (and
    possibly additional headers used by the 22 repos) and commit as test fixture.
-   Run full JSON pipeline, diff against reference.
+    Run full JSON pipeline, diff against reference. Byte-parity fixtures
+    use ~--cpp-std=14~ (boost); add separate std:: fixtures for default.
+
     Test with at least one real production header from the repos (e.g.
     ~babelconf_version.h~ from a production service).
 

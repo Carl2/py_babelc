@@ -1,0 +1,278 @@
+#+OPTIONS: tex:t ^:nil
+#+TODO: TODO IN_PROGRESS REVIEW | CANCEL DONE
+#+TITLE: Task 13 — JSON Generator Design
+#+FILETAGS: :json:codegen:babelc:design:
+#+DATE: 2026-10-02
+#+STARTUP: overview
+#+PROPERTY: branch main
+
+* Status
+
+  Design draft, *awaiting approval* before Tasks 14-17 start.
+
+  Sources studied:
+  - Original generator: ~babelc/src/plugins/generators/babel_plugins_jsongenerator.cpp~
+    (referred to as =JG= below), shared helpers in ~babel_plugins_generator.cpp~ (=GEN=).
+  - Embedded parser source: ~babelc/src/json/babel_json_parser.h~ (MIT licensed).
+  - A real reference output, produced by the SDK 0.30.5 babelc on
+    ~tests/headers/addressbook.h~ with
+    ~babelc -babelcOutput=Json -babelcDirectory=out addressbook.h~
+    (1514 lines, =out/addressbook.json.h=).  Line numbers marked =REF= refer to it.
+
+  Items marked /(verified)/ were checked against the real output.  Items marked
+  /(source)/ come from reading the C++ only.
+
+* What the generated file contains (emission order)
+
+  | # | Section                                  | Source     | Static? | REF lines |
+  |---+------------------------------------------+------------+---------+-----------|
+  | 1 | Include guard + std includes             | GEN ctor   | yes     |      2-10 |
+  | 2 | ~#include "<original header>"~           | GEN        | no      |        12 |
+  | 3 | Embedded ~babel::JSON::parser~           | JG 34-37   | yes     |    ~42-735 |
+  | 4 | ~babel::JSON::Indent~                    | JG 1018    | yes     |   739-784 |
+  | 5 | ~babel::~ helpers (first)                | GEN        | yes     |   786-811 |
+  | 6 | Per-container-kind ~is_supported_...~    | GEN 224-286| *no*    |   813-... |
+  | 7 | ~babel::~ helpers (last)                 | GEN        | yes     |  ~after 6 |
+  | 8 | Predefined JSON template /declarations/  | JG 548-1016| mostly  |       ... |
+  | 9 | Per-type /declarations/                  | JG 488-546 | no      |  999-1034 |
+  |10 | Predefined JSON template /implementations/ | JG 1121  | mostly  |       ... |
+  |11 | Per-type /implementations/               | JG 212-462 | no      | 1061-1210 |
+  |12 | ~#endif~                                 | GEN        | yes     |       end |
+
+  Order of 8-11 per ~doRealize~ (JG 1078-1122): declarations of everything
+  first, then implementations.  /(source)/ and /(verified)/ in REF (declaration
+  guards precede implementation guards).
+
+  Sections 5-7 are the same machinery IPC already uses
+  (~babel_helpers.j2~, ~babel_helpers_last.j2~, ~container_helpers.j2~).
+  They can be *reused as-is* after confirming the text matches REF.
+
+* Static vs data-dependent
+
+** Static (emit verbatim)
+   - Parser (section 3): the full text of ~babel_json_parser.h~, ~~735 lines.
+   - ~Indent~ class (section 4).
+   - Most predefined templates: arithmetic (with NaN<->null), string/wstring,
+     bool, pair, shared_ptr/unique_ptr, generic container, fixed container,
+     two map variants, ~readJSON~.
+
+** Data-dependent
+   - Container helper includes/specialisations: only for container kinds
+     that appear in the type closure (same rule as IPC).
+   - ~std::optional~ / ~std::variant~ adapter templates (default,
+     ~--cpp-std~ >= 17), or ~boost::~ ones for ~--cpp-std=14~ (original
+     behaviour, JG 668-756): emitted only if such a type appears in the
+     closure.
+   - Per-type templates for structs and enums.
+   - ~using namespace~-style lines inside each per-type block (see below).
+   - Guard macro names (derived from output path and type names).
+
+* Type closure and ordering
+
+  - Closure = every type reachable from the compilation unit's types, *not
+    descending into interfaces* (JG 1088-1100, /(source)/).  Interfaces get
+    no JSON code.
+  - Code is generated for *structs and enums only*.  Variants are only
+    sanity-checked (see below); containers/aliases/pointers are covered by
+    the generic predefined templates.
+  - The original keeps per-type code in a map keyed by ~Type*~ (JG 488-546),
+    i.e. it does /not/ topologically sort.  This is safe because all functions
+    are templates and everything is /declared/ before anything is /defined/.
+  - *Decision proposed:* emit per-type blocks in the model's existing
+    toposorted order (deterministic).  The reference-diff test must tolerate
+    block ordering, or we confirm the original's order is stable and match it.
+    See open question 2.
+
+* Per-type generation
+
+** Enums (JG 382-462, /(verified)/ for ~Sex~)
+   - *Named* enum (at least one enumerator):
+     - ~interpretJSON~: build a ~{value, "name"}~ lookup table, match the JSON
+       string, else ~throw std::invalid_argument~.
+     - ~writeJSON~: ~switch~ returning the name; unknown value writes
+       ~"Invalid ::ns::Enum (<number>)"~ and sets ~failbit~ (REF 1208).
+   - *Empty* enum: numeric only.  ~interpretJSON~ reads a Number and casts via
+     ~std::underlying_type_t~; ~writeJSON~ writes the underlying value.
+   - JSON category: named enum = string, empty enum = number.
+
+** Structs (JG 212-380, /(verified)/ for ~Person~)
+   - A field is *required* iff it has no default initialiser.  Our model:
+     ~Field.default_value is None~.  In ~Person~, ~itsName~ and
+     ~itsPhoneNumbers~ are required, ~itsSex = Sex::Unknown~ is optional.
+   - ~interpretJSON~:
+     - ~static const CharT* const theRequiredFields[]~ and a ~bool~ array
+       marking which were seen.
+     - Loop over the JSON object's pairs, dispatching by name with an
+       ~if / else if~ chain.  Required fields use the array entry for the
+       comparison; optional fields use a string literal.
+     - Unknown keys are appended to ~theExtraFields~ ("unknown field(s): ...").
+     - After the loop, unseen required fields go into ~theMissingFields~
+       ("missing field(s): ...").
+     - If either is non-empty: one ~std::invalid_argument~ with
+       ~"<location>Type ::ns::T has errors: " + missing + ", " + extra~.
+     - Result assigned with ~std::move~ inside ~#pragma GCC diagnostic~
+       push/pop; an ~#ifndef __clang_analyzer__~ chooses ~T theActual;~ or
+       ~T theActual {};~.
+   - ~writeJSON~: two label sets (compact and pretty) in a static 2xN array,
+     selected by ~theIndent.isActive()~; fields separated by ~','~ plus indent.
+   - A struct with no fields ("vacuous") counts as JSON ~null~ for variant
+     checks (JG 102-104).
+
+** Variants (JG 126-210, /(source)/)
+   - *No per-type code is generated for a declared variant type.*  The
+     generator only runs ~sanityCheck~ and returns "nothing emitted".
+   - Variant /use/ in fields is handled by generic variant adapter
+     templates (original: ~boost::variant~ only, JG 706-756), emitted only
+     when such a variant appears in the closure.  py_babelc emits
+     ~std::variant~ adapters by default and ~boost::~ for ~--cpp-std=14~
+     (see "Decision: C++ standard selection").
+   - ~sanityCheck~ maps each alternative to a JSON category
+     (number / string / boolean / object / array / null) via ~JSONTypeNameOf~
+     (JG 90-124):
+     - built-ins, enums (named -> string, empty -> number), structs
+       (object, or null if vacuous), maps -> object, arrays/containers -> array,
+       optionals and pointers add ~null~.
+     - Two alternatives in the same category: a warning per type, then an error.
+     - Some categories missing: warning unless the variant carries
+       ~[[babelc::intentionally_incomplete_variant]]~.
+     - All categories present *and* the attribute set: "redundant attribute"
+       warning.
+   - This is where ~intentionally_incomplete_variant~ is consumed.  py_babelc
+     already receives the annotation in the model; the validator has to learn it.
+
+* Predefined templates (what they must do)
+
+  Copy verbatim from REF into Jinja files; behaviour to preserve:
+  - Arithmetic: ~interpretJSON~ via Number; ~writeJSON~ promotes small ints to
+    an IO type; floating types with quiet NaN write ~null~ for NaN and read
+    ~null~ back as NaN (JG 558-576, 874-907).
+  - Containers: variable size resizes then interprets elements; fixed size
+    (~std::array~) throws on size mismatch (JG 605-632).
+  - Maps (JG 635-664): key type ~std::basic_string<CharT>~ uses the object keys
+    directly.  Any other key type is rebuilt by parsing the key string with
+    ~readJSON~ into the key type, so it must round-trip through
+    ~writeJSON~/~readJSON~.
+  - Smart pointers: empty writes ~null~; reading builds a new object.
+  - ~readJSON(stream, T&)~ throws ~"Failed to read JSON from stream"~ on failure.
+
+* Naming, includes, options
+
+  - Output name: ~<stem>.json<ext>~ (generator name lower-cased, inserted
+    before the extension; GEN 166-179).  We take the output path from ~-o~.
+  - Includes at top: ~<memory> <type_traits> <algorithm> <ostream> <sstream>
+    <cctype>~ then the original header (REF 5-12).  The path form of the
+    original include follows the same rule IPC already has (see task12 notes).
+  - Include guards: ~__<NAME>__~ style plus per-type
+    ~__HAVE_BABEL__JSON____NS__TYPE_DECLARATIONS__~ and ~..._IMPLEMENTATIONS__~
+    (REF).  Same ~__~ reserved-identifier caveat as IPC; handled by Task 18.
+  - REF still contains ~#if __cplusplus < 201700L~ namespace branches.  py_babelc
+    targets C++20 and drops them (same normalisation as the IPC tests).
+  - The only JSON-specific option in the original is tabs vs spaces for
+    indentation of the *generated text*; py_babelc uses spaces.
+
+* Mapping to py_babelc
+
+  | Piece                          | Where                                             |
+  |--------------------------------+---------------------------------------------------|
+  | Parser, Indent, predefined     | ~templates/json_parser.j2~, ~json_indent.j2~,     |
+  |                                | ~json_predefined.j2~ (static, verbatim from REF)  |
+  | Helpers 5-7                    | reuse ~babel_helpers*.j2~, ~container_helpers.j2~ |
+  | Per enum / per struct          | ~json_enum.j2~, ~json_struct.j2~                  |
+  | Variant sanity checks          | Python, in the validator (no template)            |
+  | Closure computation            | ~json_generator.py~ (reuses model toposort)       |
+  | Env, filters, guard helpers    | ~jinja_env.py~ (already shared)                   |
+  | CLI                            | ~--type ipc|json~, JSON must not require interfaces|
+
+  The plan listed ~json_variant.j2~.  Since the original emits nothing for
+  variants, *drop that template* and do the sanity check in Python.
+
+* Differences from IPC to remember
+
+  - IPC requires at least one interface; JSON must not.
+  - IPC orders types so dependencies come first; JSON does not need to.
+  - JSON embeds a large runtime; IPC includes ~sdbus-policy.h~.
+  - JSON enums need string tables; IPC enums need only a validator.
+
+* Open questions (need your decision)
+
+  1. *Capture the reference.*  Commit the babelc-generated ~addressbook.json.h~
+     (and one or two more headers) under ~tests/reference_output/~ as Task 17
+     fixtures?  The IPC ones are already committed there.
+  2. *Ordering.*  Does the original emit per-type blocks in a stable order
+     (e.g. declaration order)?  If it is pointer-keyed, the order could vary
+     between runs, and the diff test should compare blocks as a set.  I have
+     not tested this beyond one header.
+  3. *~std::variant~.*  RESOLVED: std:: adapters by default, boost:: only
+     with ~--cpp-std=14~.
+  4. *Parser text.*  Take it from the committed reference (stripped of
+     ~__cplusplus~ branches) or from ~babel_json_parser.h~?  Proposal: REF,
+     so the diff test matches by construction.
+  5. *Validation parity.*  The original rejects ~class~, access specifiers
+     and missing non-pure virtual destructors (found while testing).  Out of
+     scope for JSON, but worth a separate task.
+
+* Proposed task adjustments
+
+  - Task 14: static templates (parser, indent, predefined) — unchanged.
+  - Task 15: only ~json_enum.j2~ and ~json_struct.j2~.  Variant work becomes a
+    Python sanity check, including ~intentionally_incomplete_variant~.
+  - Task 16: ~json_generator.py~ + CLI flag — unchanged.
+  - Task 17: capture references first (open question 1), then diff.
+
+* Risks
+
+  - Predefined templates are large and easy to corrupt when pasted.  Mitigation:
+    generate them from REF by script once, then diff the rendered output.
+  - Block ordering may differ from the original (open question 2).
+  - Only one header has been generated so far.  A second header with a map,
+    optional and fixed array should be run through the original before we
+    trust the "per-type" rules above.
+
+* Decision: C++ standard selection (std:: vs boost::)
+- Original uses boost::optional/boost::variant adapters only because it targeted C++14.
+- py_babelc: new CLI option =--cpp-std= (default =20=; accepted 14, 17, 20, ...).
+  - >= 17: generate adapters for =std::optional= and =std::variant= (=std::monostate= not special-cased).
+  - 14: generate the boost adapters (as the original does).
+- The option also feeds libclang =-std=c++NN= (currently hardcoded =c++20= in clang_parser.py:118).
+- The parser already recognises both std:: and boost:: optional/variant (clang_parser.py:252-283).
+- Consequence: JSON output intentionally differs from the original reference for optional/variant, so Task 17 diffs
+  need either =--cpp-std=14= for byte-parity fixtures, or separate std fixtures.
+- Same option should apply to the IPC generator if it emits any boost-specific code (to be checked).
+
+* Findings: second reference header (=types.h=, run 2026-10-02)
+Header: scoped enums (named, empty, explicit values), struct with defaults,
+vector/array/map(string key)/map(int key)/optional/shared_ptr, empty struct.
+Generated with the SDK babelc (needs =CPLUS_INCLUDE_PATH= to a host boost; output 2078 lines).
+Scratch copies: =/tmp/opencode/pv2/{types.h,jout/types.json.h}=.
+- Original is stricter than py_babelc about input: enums need an underlying type,
+  template instances must be namespace-level typedefs/aliases ("no inline
+  instantiations"), and plain =int= is rejected (fixed-width types only).
+- *Ordering is NOT declaration order.*  Per-type blocks came out as
+  Point, Level, Flags, Empty, Item, Color (declared: Color, Flags, Level, Point, Item, Empty).
+  Identical in 5 runs, so deterministic here, but it is pointer-map order and
+  not reproducible by design.  Decision: py_babelc emits in toposorted
+  declaration order (like IPC); the reference diff must therefore compare
+  per-type blocks as a set (split on the =#ifndef __HAVE_BABEL__JSON__...= guards), not as one text.
+- Guard macro comes from the /output directory name/ (=__JOUT_TYPES_JSON_H__=
+  with =-babelcDirectory=jout=), so it changes between runs; diff tests must
+  normalise the first guard lines.
+- Required-field rule confirmed: only fields without default (=qty=, =color= optional).
+  Optional fields are matched with an inline string literal, required ones via
+  =theRequiredFields[i]=; labels are padded to the longest name for pretty mode.
+- Empty enum (=Flags=): numeric only, no lookup table.  Named enums: lookup table
+  with padded columns; =writeJSON= sets failbit "Invalid ::shop::Level (n)".
+- Optional adapter emitted only because =boost::optional= was used; helper
+  includes (=<array>=, =<vector>=, =<map>=) appear only for used containers.
+
+* Decision: no reserved identifiers in guards
+Any identifier containing =__= (anywhere) or starting with =_= + uppercase is reserved in C++.
+The original uses them in two places, and both are affected:
+- File guard: =__JOUT_TYPES_JSON_H__=.
+- Per-type guards: =__HAVE_BABEL__JSON____SHOP__COLOR_DECLARATIONS__= (double underscores in the middle too).
+py_babelc JSON output must avoid all of them:
+- File guard via the shared =jinja_env.build_guard_name= (Task 18 fixes it for IPC and JSON together;
+  Task 18 should therefore be done /before/ or together with Task 16).
+- Per-type guards: no leading underscore and no consecutive underscores, e.g.
+  =BABEL_JSON_HAVE_SHOP_COLOR_DECLARATIONS_H= (namespace separators collapse to a single =_=).
+- Consequence for Task 17: reference diffs must normalise all guard lines
+  (=#ifndef=/=#define=/trailing =#endif= comments), not only the first one.
