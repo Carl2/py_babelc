@@ -169,3 +169,41 @@ int main() {
     )
     assert r.returncode == 0, r.stderr[:3000]
     assert subprocess.run([str(exe)]).returncode == 0
+
+
+# --- orchestration ----------------------------------------------------------
+
+
+def _render_cu(cu, std=20):
+    from babelc_py.json_generator import render_json_header
+
+    return render_json_header("out.json.h")({"compilation_unit": cu, "cpp_std": std})
+
+
+def test_used_features_detects_flavours():
+    from babelc_py.json_generator import used_features
+    from babelc_py.type_model import ContainerType
+
+    opt = ContainerType("O", "::O", (), "optional", "std::int32_t", optional_kind="boost")
+    s = StructType("S", "::S", (), (Field("a", "std::vector<std::int32_t>"),
+                                      Field("b", "std::optional<std::int32_t>")), ())
+    kinds, opts, variants = used_features(_cu(structs=(s,), containers=(opt,)))
+    assert kinds == ["std::vector"] and opts == ["boost", "std"] and variants == []
+
+
+def test_std_optional_rejected_below_cpp17():
+    s = StructType("S", "::S", (), (Field("b", "std::optional<std::int32_t>"),), ())
+    r = _render_cu(_cu(structs=(s,)), 14)
+    assert r.is_nothing() and "17" in r.value
+    assert not _render_cu(_cu(structs=(s,)), 17).is_nothing()
+
+
+def test_variant_error_fails_render():
+    q = StructType("Q", "::shop::Q", NS, (Field("z", "std::int32_t"),), ())
+    r = _render_cu(_cu(structs=(POINT, q), variants=(_variant(["::shop::Point", "::shop::Q"]),)))
+    assert r.is_nothing() and "ambiguous" in r.value
+
+
+def test_render_has_no_reserved_guards():
+    out = _render_cu(_cu(enums=(LEVEL,), structs=(POINT,))).value["rendered_output"]
+    assert out.startswith("#ifndef OUT_JSON_H")

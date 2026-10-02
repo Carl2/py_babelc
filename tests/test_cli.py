@@ -26,10 +26,11 @@ def test_invalid_cpp_std_rejected(tmp_path):
     assert r.returncode != 0
 
 
-def test_type_json_not_yet_implemented(tmp_path):
-    r = _run(str(HEADERS_DIR / "addressbook.h"), "-o", str(tmp_path / "x.h"), "--type", "json")
-    assert r.returncode == 2
-    assert "not implemented" in r.stderr
+def test_type_json_generates_header(tmp_path):
+    out = tmp_path / "addressbook.json.h"
+    r = _run(str(HEADERS_DIR / "addressbook.h"), "-o", str(out), "--type", "json")
+    assert r.returncode == 0, r.stderr
+    assert "interpretJSON" in out.read_text()
 
 
 def test_unknown_type_rejected(tmp_path):

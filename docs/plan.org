@@ -393,7 +393,7 @@
    tests in ~tests/test_json_types.py~ (g++ round trip at C++14/17/20).
    Deviation: empty structs emit valid code (the original emits invalid C++).
 
-** TODO [#A] Task 16: ~json_generator.py~ — orchestration + CLI extension
+** DONE [#A] Task 16: ~json_generator.py~ — orchestration + CLI extension
    Implement ~json_generator.py~:
    - Jinja2 environment setup (reuse or share with IPC generator)
    - Type closure computation (transitive dependencies of all non-interface types)
@@ -405,6 +405,10 @@
 
    - Route to ~render_ipc_header~ or ~render_json_header~ based on type
    - JSON mode should *not* require interfaces (unlike IPC which mandates them)
+
+   Implemented: ~render_json_header~, ~used_features~ in ~json_generator.py~, template
+   ~json_header.h.j2~, ~optional_kind~ on ~ContainerType~, ~--type json~ routed in ~__main__.py~.
+   std::optional/variant rejected below C++17. Both corpus headers compile with g++ -std=c++20.
 
 ** TODO [#B] Task 17: Integration tests — JSON reference diff
    Capture reference output: run babelc in JSON mode on ~addressbook.h~ (and

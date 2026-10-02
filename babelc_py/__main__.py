@@ -11,6 +11,7 @@ from babelc_py.clang_parser import (
     parse_with_clang,
 )
 from babelc_py.ipc_generator import render_ipc_header, write_output
+from babelc_py.json_generator import render_json_header
 from babelc_py.pre_process import cleanup_temp_files, rewrite_babelc_attributes
 from babelc_py.type_model import validate_type_model
 
@@ -45,10 +46,6 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.type == "json":
-        print("py-babelc: --type json is not implemented yet", file=sys.stderr)
-        sys.exit(2)
-
     system_includes = discover_system_cpp_includes()
 
     try:
@@ -64,7 +61,11 @@ def main():
             .bind(parse_with_clang)
             .bind(extract_type_model)
             .bind(validate_type_model)
-            .bind(render_ipc_header(args.output))
+            .bind(
+                render_json_header(args.output)
+                if args.type == "json"
+                else render_ipc_header(args.output)
+            )
             .bind(write_output)
         )
     finally:

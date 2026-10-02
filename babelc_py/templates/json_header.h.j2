@@ -1,0 +1,45 @@
+{# Task 16: top-level JSON header orchestrator. #}
+{# Context: guard_name, header_path, cpp_std, kinds (container kinds), adapters (list of "std"/"boost"
+   for optional), variant_adapters, type_declarations / type_implementations (pre-rendered blocks) #}
+#ifndef {{ guard_name }}
+#define {{ guard_name }}
+
+#include <memory>
+#include <type_traits>
+#include <algorithm>
+#include <ostream>
+#include <sstream>
+#include <cctype>
+#include <string>
+#include <stdexcept>
+
+#include "{{ header_path }}"
+
+{% include "json_parser.j2" %}
+{% include "json_indent.j2" %}
+{% include "babel_helpers.j2" %}
+{% for kind in kinds %}
+{% include "container_helpers.j2" %}
+{% endfor %}
+{% include "babel_helpers_last.j2" %}
+{% include "json_predefined_decl.j2" %}
+{% for ns in optional_adapters %}
+{% include "json_optional_decl.j2" %}
+{% endfor %}
+{% for ns in variant_adapters %}
+{% include "json_variant_decl.j2" %}
+{% endfor %}
+{% for block in type_declarations %}
+{{ block }}
+{% endfor %}
+{% include "json_predefined_impl.j2" %}
+{% for block in type_implementations %}
+{{ block }}
+{% endfor %}
+{% for ns in optional_adapters %}
+{% include "json_optional_impl.j2" %}
+{% endfor %}
+{% for ns in variant_adapters %}
+{% include "json_variant_impl.j2" %}
+{% endfor %}
+#endif

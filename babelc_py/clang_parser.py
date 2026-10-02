@@ -250,9 +250,9 @@ def _resolve_container(
         )
 
     # Optional
-    for prefix, kind in [
-        ("boost::optional<", "optional"),
-        ("std::optional<", "optional"),
+    for prefix, okind in [
+        ("boost::optional<", "boost"),
+        ("std::optional<", "std"),
     ]:
         if canonical.startswith(prefix):
             inner = canonical[len(prefix) : -1]
@@ -260,8 +260,9 @@ def _resolve_container(
                 name=name,
                 qualified_name=qualified,
                 namespace=namespace,
-                container_kind=kind,
+                container_kind="optional",
                 element_type=inner,
+                optional_kind=okind,
             )
 
     # Smart pointers
