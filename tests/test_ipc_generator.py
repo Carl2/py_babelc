@@ -132,10 +132,10 @@ def addressbook_cu() -> CompilationUnit:
 
 class TestFilters:
     def testguard_macro(self):
-        assert guard_macro("addressbook::v1::Sex") == "ADDRESSBOOK__V1__SEX"
+        assert guard_macro("addressbook::v1::Sex") == "ADDRESSBOOK_V1_SEX"
 
     def test_guard_macro_leading_colons(self):
-        assert guard_macro("::addressbook::v1::Sex") == "__ADDRESSBOOK__V1__SEX"
+        assert guard_macro("::addressbook::v1::Sex") == "ADDRESSBOOK_V1_SEX"
 
     def test_qualified_filter_with_obj(self, addressbook_cu):
         enum = addressbook_cu.enums[0]
@@ -158,8 +158,8 @@ class TestFilters:
 
     def testbuild_guard_name(self):
         result = build_guard_name("/tmp/babelc_ref/addressbook.ipc.h")
-        assert result.startswith("__")
-        assert result.endswith("__")
+        assert "__" not in result
+        assert not result.startswith("_")
         assert "ADDRESSBOOK" in result
 
 
@@ -273,7 +273,7 @@ class TestTemplateRendering:
     def test_babel_helpers_renders(self, env):
         tpl = env.get_template("babel_helpers.j2")
         output = tpl.render()
-        assert "__BABEL_HELPERS_FIRST__" in output
+        assert "BABEL_HELPERS_FIRST" in output
         assert "is_supported_ptr_helper" in output
         assert "namespace babel {" in output
         # No C++17 guards
@@ -282,7 +282,7 @@ class TestTemplateRendering:
     def test_container_helpers_renders(self, env):
         tpl = env.get_template("container_helpers.j2")
         output = tpl.render(kind="std::vector")
-        assert "__BABEL_HELPERS_STD__VECTOR__" in output
+        assert "BABEL_HELPERS_STD_VECTOR" in output
         assert "is_supported_container_helper<std::vector<T>>" in output
         assert "#include <vector>" in output
 
@@ -299,13 +299,13 @@ class TestTemplateRendering:
     def test_babel_helpers_last_renders(self, env):
         tpl = env.get_template("babel_helpers_last.j2")
         output = tpl.render()
-        assert "__BABEL_HELPERS_LAST__" in output
+        assert "BABEL_HELPERS_LAST" in output
         assert "is_supported_container" in output
 
     def test_helpers_renders(self, env):
         tpl = env.get_template("helpers.j2")
         output = tpl.render()
-        assert "__HAVE_BABEL__IPC_HELPERS__" in output
+        assert "HAVE_BABEL_IPC_HELPERS" in output
         assert "BooleanReference" in output
         assert "EnumReference" in output
         assert "StringReference" in output

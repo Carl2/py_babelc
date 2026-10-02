@@ -411,7 +411,7 @@
     Test with at least one real production header from the repos (e.g.
     ~babelconf_version.h~ from a production service).
 
-** TODO [#B] Task 18: Fix reserved double-underscore in header guards
+** DONE [#B] Task 18: Fix reserved double-underscore in header guards
    After Task 12 verifies identical output, change the include-guard naming
    scheme to avoid leading ~__~ which is reserved for the standard library.
    E.g. ~__HAVE_BABEL__IPC__...~  →  ~HAVE_BABEL__IPC__...~ (single underscore

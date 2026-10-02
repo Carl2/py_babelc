@@ -3,8 +3,8 @@
 
 {# ============= Forward declarations (emitted in declarations section) ============= #}
 {% macro forward_declarations(iface) %}
-#ifndef __HAVE__{{ iface.qualified_name|guard_macro }}_DECLARATIONS__
-#define __HAVE__{{ iface.qualified_name|guard_macro }}_DECLARATIONS__
+#ifndef HAVE_{{ iface.qualified_name|guard_macro }}_DECLARATIONS
+#define HAVE_{{ iface.qualified_name|guard_macro }}_DECLARATIONS
 
 {{ iface|ns_open }}
 
@@ -89,8 +89,8 @@
 
 {# ============= Proxy class stubs ============= #}
 {% macro stubs(iface) %}
-#ifndef __HAVE__{{ iface.qualified_name|guard_macro }}_STUBS__
-#define __HAVE__{{ iface.qualified_name|guard_macro }}_STUBS__
+#ifndef HAVE_{{ iface.qualified_name|guard_macro }}_STUBS
+#define HAVE_{{ iface.qualified_name|guard_macro }}_STUBS
 
 {{ iface|ns_open }}
 
@@ -398,8 +398,8 @@
 
 {# ============= Registration function implementations ============= #}
 {% macro implementations(iface) %}
-#ifndef __HAVE__{{ iface.qualified_name|guard_macro }}_IMPLEMENTATIONS__
-#define __HAVE__{{ iface.qualified_name|guard_macro }}_IMPLEMENTATIONS__
+#ifndef HAVE_{{ iface.qualified_name|guard_macro }}_IMPLEMENTATIONS
+#define HAVE_{{ iface.qualified_name|guard_macro }}_IMPLEMENTATIONS
 
 {{ iface|ns_open }}
 

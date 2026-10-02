@@ -78,14 +78,14 @@ class TestFullPipeline:
         assert "getServerBroadcastProxy" in content
 
         # babel type traits
-        assert "__BABEL_HELPERS_FIRST__" in content
-        assert "__BABEL_HELPERS_LAST__" in content
+        assert "BABEL_HELPERS_FIRST" in content
+        assert "BABEL_HELPERS_LAST" in content
 
         # Container helpers
-        assert "__BABEL_HELPERS_STD__VECTOR__" in content
+        assert "BABEL_HELPERS_STD_VECTOR" in content
 
         # ipc helpers
-        assert "__HAVE_BABEL__IPC_HELPERS__" in content
+        assert "HAVE_BABEL_IPC_HELPERS" in content
 
         # Per-type: container (PhoneNumbers)
         assert "PhoneNumbers_ArrayView" in content

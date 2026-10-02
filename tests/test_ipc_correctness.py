@@ -127,19 +127,25 @@ def normalise(text: str) -> str:
 
     text = _collapse_signatures(text)
 
-    # Normalise top-level include guard
+    # Normalise include guards: the original uses reserved '__' names, py_babelc
+    # does not.  Canonicalise every guard macro (strip leading/trailing and
+    # collapse repeated underscores) on both sides, and the top-level one
+    # (path dependent) to a fixed name.
     text = re.sub(
-        r"#ifndef\s+__[A-Za-z0-9_]+__\s*\n#define\s+__[A-Za-z0-9_]+__",
+        r"#ifndef\s+\w+\s*\n#define\s+\w+",
         "#ifndef __GUARD__\n#define __GUARD__",
         text,
         count=1,
     )
+    text = re.sub(
+        r"^(#\s*(?:ifndef|define))\s+(\w+)",
+        lambda m: f"{m.group(1)} " + re.sub(r"_+", "_", m.group(2)).strip("_"),
+        text,
+        flags=re.M,
+    )
 
     # Normalise header include path
     text = re.sub(r'#include ".*\.h"', '#include "HEADER"', text, count=1)
-
-    # Normalise guard macro double-underscore: collapse runs of 3+ underscores to 2
-    text = re.sub(r"_{3,}", "__", text)
 
     # Normalise empty parens: (  ) -> () and ( ) -> ()
     text = re.sub(r"\(\s+\)", "()", text)

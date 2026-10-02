@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 import jinja2
 
 
 def guard_macro(name: str) -> str:
-    """Convert a qualified name to an include guard style: '::a::b::C' -> '__A__B__C'."""
-    return name.replace("::", "__").upper()
+    """Qualified name to a guard fragment: '::a::b::C' -> 'A_B_C'.
+
+    Never contains '__' or a leading underscore (both reserved in C++).
+    """
+    return re.sub(r"_+", "_", name.replace("::", "_")).strip("_").upper()
 
 
 def qualified(obj: Any) -> str:
@@ -33,8 +38,8 @@ def ns_close(obj: Any) -> str:
 
 def build_guard_name(output_path: str) -> str:
     """Build an include guard macro name from the output path."""
-    name = output_path.replace("/", "_").replace(".", "_").replace("-", "_")
-    return f"__{name.upper()}__"
+    name = re.sub(r"[^A-Za-z0-9]+", "_", output_path).strip("_").upper()
+    return name if not name[:1].isdigit() else f"G_{name}"
 
 
 def create_env(**extra_filters: Any) -> jinja2.Environment:

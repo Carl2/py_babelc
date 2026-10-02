@@ -1,8 +1,8 @@
 {# Task 9: Struct IPC — _TupleView typedef, IpcReadContainer, IpcWriteContainer. #}
 {# Context: struct (StructType) with enriched fields from ipc_generator #}
 {% macro declaration(struct) %}
-#ifndef __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS__
-#define __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS__
+#ifndef HAVE_BABEL_IPC_{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS
+#define HAVE_BABEL_IPC_{{ struct.qualified_name|guard_macro }}_IPC_DECLARATIONS
 
 {{ struct|ns_open }}
 
@@ -25,8 +25,8 @@
 #endif
 {% endmacro %}
 {% macro implementation(struct) %}
-#ifndef __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
-#define __HAVE_BABEL__IPC__{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS__
+#ifndef HAVE_BABEL_IPC_{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
+#define HAVE_BABEL_IPC_{{ struct.qualified_name|guard_macro }}_IPC_IMPLEMENTATIONS
 
 {{ struct|ns_open }}
 

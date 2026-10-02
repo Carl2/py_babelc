@@ -1,6 +1,6 @@
 {# Task 6b: Per-container-kind specialisations. Rendered once per kind in container_kinds_used. #}
 {# Context: kind (str) — e.g. "std::vector", "std::list", "std::array", "std::map" #}
-{% set guard = "__BABEL_HELPERS_" + kind|upper|replace("::", "__") + "__" %}
+{% set guard = "BABEL_HELPERS_" + kind|upper|replace("::", "_") %}
 #ifndef {{ guard }}
 #define {{ guard }}
 
