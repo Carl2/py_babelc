@@ -462,18 +462,14 @@ def _extract_parameters(method_cursor: Cursor) -> list[Parameter]:
 def _extract_default_value(field_cursor: Cursor) -> str | None:
     """Extract default value from a field cursor, if present.
 
-    Checks for children that are not ANNOTATE_ATTR (which indicate an
-    initializer expression).
+    A field has an initializer exactly when one of its children is an
+    expression (type references, namespace references and attributes are
+    not initializers).
     """
     for child in field_cursor.get_children():
-        if child.kind not in (
-            CursorKind.ANNOTATE_ATTR,
-            CursorKind.UNEXPOSED_ATTR,
-        ):
-            # There is an initializer — extract from tokens
+        if child.kind.is_expression():
             tokens = list(child.get_tokens())
-            if tokens:
-                return " ".join(t.spelling for t in tokens)
+            return " ".join(t.spelling for t in tokens) if tokens else "{}"
     return None
 
 

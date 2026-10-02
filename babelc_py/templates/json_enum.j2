@@ -53,7 +53,7 @@
         }
 {% endfor %}
         }
-        (writeJSON( theStream << BABEL_JSON_PARSER_STRING_LITERAL(CharT,"Invalid {{ qn }} ("), static_cast<std::underlying_type_t<{{ qn }}>>(theValue), theIndent ) << BABEL_JSON_PARSER_STRING_LITERAL(CharT,")")).setstate(std::ios_base::failbit);
+        (writeJSON( theStream << BABEL_JSON_PARSER_STRING_LITERAL(CharT,"Invalid {{ qn }} ("), static_cast<{{ t.underlying_type }}>(theValue), theIndent ) << BABEL_JSON_PARSER_STRING_LITERAL(CharT,")")).setstate(std::ios_base::failbit);
         return theStream;
     }
 {% endif %}

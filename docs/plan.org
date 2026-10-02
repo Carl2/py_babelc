@@ -410,7 +410,7 @@
    ~json_header.h.j2~, ~optional_kind~ on ~ContainerType~, ~--type json~ routed in ~__main__.py~.
    std::optional/variant rejected below C++17. Both corpus headers compile with g++ -std=c++20.
 
-** TODO [#B] Task 17: Integration tests — JSON reference diff
+** DONE [#B] Task 17: Integration tests — JSON reference diff
    Capture reference output: run babelc in JSON mode on ~addressbook.h~ (and
    possibly additional headers used by the 22 repos) and commit as test fixture.
     Run full JSON pipeline, diff against reference. Byte-parity fixtures
@@ -418,6 +418,14 @@
 
     Test with at least one real production header from the repos (e.g.
     ~babelconf_version.h~ from a production service).
+
+   Implemented in ~tests/test_json_correctness.py~: order-insensitive, whitespace- and
+   guard-normalised block diff against the original output for addressbook and json_types
+   (json_types needs Boost: BOOST_INCLUDE_DIR or conan cache), plus g++ compile checks at
+   C++17/20 incl. new ~tests/headers/json_std_types.h~ (std::optional/variant).
+   Known deviation: empty structs (original output is invalid C++). Not done: a production
+   header from the repos, byte-parity fixtures at --cpp-std=14.
+   Also fixed: ~_extract_default_value~ treated type refs as initialisers (every field looked optional).
 
 ** DONE [#B] Task 18: Fix reserved double-underscore in header guards
    After Task 12 verifies identical output, change the include-guard naming

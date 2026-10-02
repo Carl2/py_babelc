@@ -32,10 +32,10 @@
 {% for block in type_declarations %}
 {{ block }}
 {% endfor %}
-{% include "json_predefined_impl.j2" %}
 {% for block in type_implementations %}
 {{ block }}
 {% endfor %}
+{% include "json_predefined_impl.j2" %}
 {% for ns in optional_adapters %}
 {% include "json_optional_impl.j2" %}
 {% endfor %}
