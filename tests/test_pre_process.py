@@ -176,3 +176,18 @@ class TestRewriteBabelcAttributes:
 
         assert result.is_just()
         assert result.value["rewritten_header_path"] == str(header)
+
+
+def test_temp_file_removed_by_cleanup(tmp_path):
+    from pathlib import Path
+
+    from babelc_py.pre_process import cleanup_temp_files
+
+    h = tmp_path / "a.h"
+    h.write_text('struct [[babelc::ipc_type("X")]] A {};\n')
+    ctx = rewrite_babelc_attributes({"header_path": str(h)}).value
+    tmp = Path(ctx["rewritten_header_path"])
+    assert tmp.exists() and tmp != h
+    cleanup_temp_files()
+    assert not tmp.exists()
+    assert h.exists()

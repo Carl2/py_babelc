@@ -22,6 +22,16 @@ INTERFACE_NAME_RE = re.compile(
 )
 
 
+# Temp files created by rewrite_babelc_attributes, removed by cleanup_temp_files.
+_TEMP_FILES: list[str] = []
+
+
+def cleanup_temp_files() -> None:
+    """Delete every temp file created by the pre-pass (never the original header)."""
+    while _TEMP_FILES:
+        Path(_TEMP_FILES.pop()).unlink(missing_ok=True)
+
+
 def _replace_attr(match: re.Match) -> str:
     """Replace a single babelc attribute match with clang::annotate form."""
     name = match.group(1)
@@ -92,6 +102,7 @@ def rewrite_babelc_attributes(ctx: dict) -> Maybe:
     except Exception as e:
         return Maybe(value=f"Could not write temp file: {e}", monoid=False)
 
+    _TEMP_FILES.append(tmp.name)
     ctx["rewritten_header_path"] = tmp.name
 
     # Add original header's directory as -I so includes still resolve

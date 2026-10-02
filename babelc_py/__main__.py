@@ -11,7 +11,7 @@ from babelc_py.clang_parser import (
     parse_with_clang,
 )
 from babelc_py.ipc_generator import render_ipc_header, write_output
-from babelc_py.pre_process import rewrite_babelc_attributes
+from babelc_py.pre_process import cleanup_temp_files, rewrite_babelc_attributes
 from babelc_py.type_model import validate_type_model
 
 
@@ -32,20 +32,23 @@ def main():
 
     system_includes = discover_system_cpp_includes()
 
-    result = (
-        Just(
-            {
-                "header_path": args.header,
-                "clang_args": system_includes + args.clang_arg,
-            }
+    try:
+        result = (
+            Just(
+                {
+                    "header_path": args.header,
+                    "clang_args": system_includes + args.clang_arg,
+                }
+            )
+            .bind(rewrite_babelc_attributes)
+            .bind(parse_with_clang)
+            .bind(extract_type_model)
+            .bind(validate_type_model)
+            .bind(render_ipc_header(args.output))
+            .bind(write_output)
         )
-        .bind(rewrite_babelc_attributes)
-        .bind(parse_with_clang)
-        .bind(extract_type_model)
-        .bind(validate_type_model)
-        .bind(render_ipc_header(args.output))
-        .bind(write_output)
-    )
+    finally:
+        cleanup_temp_files()
 
     if result.is_nothing():
         print(f"py-babelc: {result.value}", file=sys.stderr)
