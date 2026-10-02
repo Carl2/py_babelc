@@ -166,6 +166,38 @@ class TestResolveContainer:
         assert r.element_type == "std::uint8_t"
         assert r.size == 20
 
+    def test_map_simple(self):
+        r = _resolve_container("std::map<std::string, std::uint32_t>", "M", "ns::M", ("ns",))
+        assert r.container_kind == "map"
+        assert r.element_type == "std::uint32_t"
+
+    def test_map_nested_key(self):
+        r = _resolve_container(
+            "std::map<std::pair<int, int>, std::string>", "M", "ns::M", ("ns",)
+        )
+        assert r.element_type == "std::string"
+
+    def test_map_nested_value(self):
+        r = _resolve_container(
+            "std::map<int, std::pair<int, int>>", "M", "ns::M", ("ns",)
+        )
+        assert r.element_type == "std::pair<int, int>"
+
+    def test_map_with_default_args(self):
+        r = _resolve_container(
+            "std::map<int, std::string, std::less<int>, "
+            "std::allocator<std::pair<const int, std::string>>>",
+            "M", "ns::M", ("ns",),
+        )
+        assert r.element_type == "std::string"
+
+    def test_array_nested_element(self):
+        r = _resolve_container(
+            "std::array<std::pair<int, int>, 3>", "A", "ns::A", ("ns",)
+        )
+        assert r.element_type == "std::pair<int, int>"
+        assert r.size == 3
+
     def test_not_a_container(self):
         r = _resolve_container(
             "int",

@@ -236,12 +236,9 @@ def _resolve_container(
     # Map
     if canonical.startswith("std::map<"):
         inner_full = canonical[len("std::map<") : -1]
-        # Split on first comma for key, rest is value
-        first_comma = inner_full.find(",")
-        if first_comma != -1:
-            element = inner_full[first_comma + 1 :].strip()
-        else:
-            element = inner_full
+        # Top-level args: key, value, [comparator, allocator]; keep the value
+        args = _split_template_args(inner_full)
+        element = args[1] if len(args) > 1 else inner_full
         return ContainerType(
             name=name,
             qualified_name=qualified,
