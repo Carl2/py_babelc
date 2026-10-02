@@ -10,7 +10,7 @@ configuration is needed, returning Maybe values for pipeline composition.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +107,7 @@ class EnrichedContainer:
     opt_value_type: str = ""
     opt_read: str = ""
     opt_write: str = ""
+    element_wire: str = ""
 
 
 @dataclass(frozen=True)
@@ -154,12 +155,12 @@ def _lookup_type(type_name: str, cu: CompilationUnit) -> Any:
     for cont in cu.containers:
         if cont.qualified_name == type_name or cont.name == type_name:
             return cont
-    for alias in cu.aliases:
-        if alias.qualified_name == type_name or alias.name == type_name:
-            return alias
     for variant in cu.variants:
         if variant.qualified_name == type_name or variant.name == type_name:
             return variant
+    for alias in cu.aliases:
+        if alias.qualified_name == type_name or alias.name == type_name:
+            return alias
     return None
 
 
@@ -236,18 +237,35 @@ def ipc_template_type(type_name: str, cu: CompilationUnit) -> str:
     if _is_struct(type_name, cu):
         qn = _qualified_name_for(type_name, cu)
         return f"{qn}_TupleView<Boolean,IpcPolicy>"
-    if _is_container(type_name, cu):
-        qn = _qualified_name_for(type_name, cu)
-        return qn
-    # For containers resolved via alias
+    if _is_variant(type_name, cu):
+        return "typename IpcPolicy::VariantType"
     resolved = _lookup_type(type_name, cu)
     if isinstance(resolved, ContainerType):
-        return (
-            resolved.qualified_name
-            if resolved.qualified_name.startswith("::")
-            else "::" + resolved.qualified_name
-        )
+        qn = _qualified_name_for(type_name, cu)
+        if resolved.container_kind == "optional":
+            return f"std::array<{ipc_template_type(resolved.element_type, cu)},1>"
+        if resolved.container_kind == "map" or _vec_elem_complicated(resolved, cu):
+            return f"{qn}_ArrayView<Boolean,IpcPolicy>"
+        return qn
     return type_name
+
+
+def _vec_elem_complicated(cont: ContainerType, cu: CompilationUnit) -> bool:
+    """True when a vector/list/array has elements that need a wire view."""
+    e = cont.element_type
+    return (
+        _is_string(e)
+        or _is_bool(e)
+        or _is_complicated_field(e, cu)
+        or _get_enum(e, cu) is not None
+    )
+
+
+def _vec_elem_wire(cont: ContainerType, cu: CompilationUnit) -> str:
+    """Element type used inside a vector's _ArrayView typedef."""
+    if _vec_elem_complicated(cont, cu):
+        return ipc_template_type(cont.element_type, cu)
+    return _qualified_name_for(cont.element_type, cu)
 
 
 def _qualified_name_for(type_name: str, cu: CompilationUnit) -> str:
@@ -502,6 +520,7 @@ def _enrich_container(cont: ContainerType, cu: CompilationUnit) -> EnrichedConta
         container_kind=cont.container_kind,
         element_type=cont.element_type,
         element_type_qualified=element_qn,
+        element_wire=_vec_elem_wire(cont, cu),
         is_simple_element=is_simple,
         element_read_expr=element_read,
         element_write_expr=element_write,
@@ -981,6 +1000,55 @@ def _ensure_cstdint(text: str) -> str:
     return text.replace("#include <array>\n", "#include <array>\n#include <cstdint>\n", 1)
 
 
+def _canonical_type(type_name: str, cu: CompilationUnit) -> str:
+    """Follow plain aliases that stand for a string, bool or enum."""
+    seen = set()
+    cur = type_name
+    while cur not in seen:
+        seen.add(cur)
+        r = _lookup_type(cur, cu)
+        if not isinstance(r, AliasType):
+            break
+        cur = r.target_type
+        if _is_string(cur) or _is_bool(cur) or _get_enum(cur, cu) is not None:
+            return cur
+    return type_name
+
+
+def canonicalise_aliases(cu: CompilationUnit) -> CompilationUnit:
+    """Replace aliases of string/bool/enum by their target type."""
+    c = lambda t: _canonical_type(t, cu)  # noqa: E731
+    structs = tuple(
+        replace(s, fields=tuple(replace(f, type_name=c(f.type_name)) for f in s.fields))
+        for s in cu.structs
+    )
+    ifaces = tuple(
+        replace(
+            i,
+            methods=tuple(
+                replace(
+                    m,
+                    return_type=c(m.return_type),
+                    parameters=tuple(
+                        replace(p, type_name=c(p.type_name)) for p in m.parameters
+                    ),
+                )
+                for m in i.methods
+            ),
+        )
+        for i in cu.interfaces
+    )
+    conts = tuple(
+        replace(
+            t,
+            element_type=c(t.element_type),
+            key_type=c(t.key_type) if t.key_type else t.key_type,
+        )
+        for t in cu.containers
+    )
+    return replace(cu, structs=structs, interfaces=ifaces, containers=conts)
+
+
 def render_ipc_header(output_path: str) -> callable:
     """Curried: captures output path, returns a bind-compatible pipeline step.
 
@@ -990,7 +1058,7 @@ def render_ipc_header(output_path: str) -> callable:
 
     def do_render(ctx: dict) -> Maybe:
         try:
-            cu: CompilationUnit = ctx["compilation_unit"]
+            cu: CompilationUnit = canonicalise_aliases(ctx["compilation_unit"])
             env = _create_jinja_env()
             template = env.get_template("ipc_header.h.j2")
 

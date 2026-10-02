@@ -254,3 +254,21 @@ def test_map_optional_aliases_compile(tmp_path):
         capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stderr[:2000]
+
+
+def test_wire_view_types_match_original(tmp_path):
+    from tests.test_json_correctness import boost_include
+    import subprocess, sys
+    from pathlib import Path
+    hdr = Path(__file__).parent / "headers" / "ipc_wire_views.h"
+    out = tmp_path / "o.h"
+    r = subprocess.run(
+        [sys.executable, "-m", "babelc_py", str(hdr), "-o", str(out),
+         f"--clang-arg=-I{boost_include()}"],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    t = out.read_text()
+    assert "using DV_ArrayView = std::array<::n::D_TupleView<Boolean,IpcPolicy>,1>;" in t
+    assert "using SV_ArrayView = std::array<const char *,1>;" in t
+    assert "using VV_ArrayView = std::array<typename IpcPolicy::VariantType,1>;" in t
+    assert "std::array<::n::DV_ArrayView<Boolean,IpcPolicy>,1>, ::n::SV_ArrayView<Boolean,IpcPolicy>" in t

@@ -13,7 +13,7 @@
 {{ cont|ns_open }}
 
     template <typename Boolean,typename IpcPolicy>
-    using {{ cont.name }}_ArrayView = std::array<{{ cont.element_type_qualified }},1>;
+    using {{ cont.name }}_ArrayView = std::array<{{ cont.element_wire }},1>;
 
     template <class IpcPolicy, typename Boolean, typename MessageT>
     void IpcReadContainer( MessageT &&theMessage, {{ cont|qualified }} &theVaryingLengthContainer );
