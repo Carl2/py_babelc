@@ -488,3 +488,24 @@
    - ~parseRootObjectElement<T>(json, name)~ — one-shot parse of a named element
    This library is *not generated* — it's hand-written code that depends on the
    generated ~.json.h~ headers.
+
+** TODO [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
+   Harness: ~tools/prod_compare.py~ / ~tools/prod_compare_all.py~ (paths hardcoded to
+   /home/calle/tmp/release/repos and /tmp/opencode; run all 81 headers listed in
+   ~babelc_generate(... TYPE json)~ blocks). Result of the first run (54 headers reached
+   a verdict): 10 identical block sets, 17 differing, 10 where the original works but we fail,
+   rest fail in the original too (harness lacks <cstdint>/flags).
+   Findings:
+   1. *Types from included headers.* The original also generates code for types declared in
+      included project headers (e.g. ~trigger_configuration.h~ uses ~com::volvo::ocp::cde::v1::TriggerId~
+      from ~cde/common.h~; ~comm_stats_struct~ uses ~ServiceVersion~). py_babelc only extracts
+      types from the main file (~_is_from_main_file~) so validation fails with V008. Affects IPC too.
+      Need to find out which includes the original follows (user headers vs system headers).
+   2. *Brace initialisers.* ~double nbrSeeds{};~ is treated as /required/ by the original (its
+      member regex only recognises ~= init~). We treat it as optional (more correct, accepts a
+      superset on read). Decision needed: parity or correctness. Causes the IMPLEMENTATIONS-only
+      diffs in example.h, local_time, dtj_service_types, test_service_swap_data_types etc.
+   3. Other failures to triage: ~annotate attribute cannot be applied to types~ (data_source_persistent.h,
+      pre_process rewriting an attribute in an unsupported position), ~unresolvable type ValueType~ /
+      ~EmergencyCallType~ (probably same as 1 or using-declarations), persistent_config (vector helper
+      and several types missing).
