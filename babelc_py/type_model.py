@@ -154,6 +154,8 @@ class CompilationUnit:
     containers: tuple[ContainerType, ...]
     pointers: tuple[PointerType, ...]
     variants: tuple[VariantType, ...]
+    # Qualified names of types defined in the main file (empty = unknown/all).
+    primary_names: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------

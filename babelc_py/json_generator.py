@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import dataclass
 
 from pymonad.maybe import Just, Maybe
 
+from babelc_py.clang_parser import _resolve_names, _type_references
 from babelc_py.ipc_generator import _lookup_type
 from babelc_py.jinja_env import build_guard_name, create_env
 from babelc_py.type_model import (
@@ -171,6 +173,42 @@ def _referenced_strings(cu: CompilationUnit) -> list[str]:
     return out
 
 
+def json_closure(cu: CompilationUnit) -> CompilationUnit:
+    """Restrict cu to types reachable from main-file non-interface types.
+
+    Like the original, the walk does not follow interface method signatures,
+    so types only used by interfaces get no JSON code.
+    """
+    if not cu.primary_names:
+        return cu
+    pool = {
+        t.qualified_name: t
+        for cat in (cu.enums, cu.structs, cu.aliases, cu.containers,
+                    cu.pointers, cu.variants)
+        for t in cat
+    }
+    iface = {i.qualified_name for i in cu.interfaces}
+    keep: set[str] = set()
+    work = [n for n in cu.primary_names if n in pool and n not in iface]
+    while work:
+        n = work.pop()
+        if n in keep:
+            continue
+        keep.add(n)
+        t = pool[n]
+        for ref in _type_references(t):
+            work.extend(_resolve_names(ref, pool, tuple(t.namespace)) - keep)
+
+    def f(items):
+        return tuple(t for t in items if t.qualified_name in keep)
+
+    return dataclasses.replace(
+        cu, enums=f(cu.enums), structs=f(cu.structs), aliases=f(cu.aliases),
+        containers=f(cu.containers), pointers=f(cu.pointers),
+        variants=f(cu.variants),
+    )
+
+
 def used_features(cu: CompilationUnit) -> tuple[list[str], list[str], list[str]]:
     """Return (container kinds, optional flavours, variant flavours) in use."""
     texts = _referenced_strings(cu)
@@ -193,7 +231,7 @@ def render_json_header(output_path: str) -> callable:
 
     def do_render(ctx: dict) -> Maybe:
         try:
-            cu: CompilationUnit = ctx["compilation_unit"]
+            cu: CompilationUnit = json_closure(ctx["compilation_unit"])
             cpp_std = ctx.get("cpp_std", 20)
             kinds, optionals, variants = used_features(cu)
 

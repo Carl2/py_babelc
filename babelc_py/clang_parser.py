@@ -738,6 +738,9 @@ def extract_type_model(ctx: dict) -> Maybe:
 
         _walk_cursor(tu.cursor, (), main_file, result)
 
+        primary = tuple(
+            t.qualified_name for k in _CATEGORIES for t in result[k]
+        )
         pool: dict[str, list] = {c: [] for c in _CATEGORIES}
         _walk_cursor(tu.cursor, (), main_file, pool, _is_user_header)
         _add_referenced_from_includes(result, pool)
@@ -757,6 +760,7 @@ def extract_type_model(ctx: dict) -> Maybe:
             containers=tuple(result["containers"]),
             pointers=tuple(result["pointers"]),
             variants=tuple(result["variants"]),
+            primary_names=primary,
         )
 
         return Just({**ctx, "compilation_unit": cu})

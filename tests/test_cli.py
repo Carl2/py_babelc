@@ -48,3 +48,28 @@ def test_referenced_types_from_included_header_are_generated(tmp_path):
         assert "TriggerId" in text
         assert "Unused" not in text.replace("theFirstUnused", "")
         assert "Logger_TupleView" not in text
+
+
+def test_json_skips_included_types_only_used_by_interfaces(tmp_path):
+    (tmp_path / "inc.h").write_text(
+        "#include <cstdint>\nnamespace n {\n"
+        "struct OnlyIface { std::uint32_t b = 0; };\n"
+        "struct Shared { std::uint32_t c = 0; }; }\n"
+    )
+    hdr = tmp_path / "main.h"
+    hdr.write_text(
+        '#include "inc.h"\n'
+        "namespace n { struct Used { Shared s; };\n"
+        "struct I { virtual ~I() {}\n"
+        "  virtual void f(const OnlyIface& x) = 0; }; }\n"
+    )
+    out = tmp_path / "o.json.h"
+    r = _run(str(hdr), "-o", str(out), "--type", "json")
+    assert r.returncode == 0, r.stderr
+    text = out.read_text()
+    assert "Shared" in text
+    assert "OnlyIface" not in text
+    out2 = tmp_path / "o.ipc.h"
+    r = _run(str(hdr), "-o", str(out2))
+    assert r.returncode == 0, r.stderr
+    assert "OnlyIface" in out2.read_text()
