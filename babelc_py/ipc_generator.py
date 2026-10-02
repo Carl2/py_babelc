@@ -492,25 +492,16 @@ def _enrich_container(cont: ContainerType, cu: CompilationUnit) -> EnrichedConta
             ),
         )
     element_qn = _qualified_name_for(cont.element_type, cu)
-    is_simple = not _is_complicated_field(cont.element_type, cu)
-
-    # For complicated elements, generate per-element read/write
+    is_simple = not _vec_elem_complicated(cont, cu)
     if is_simple:
         element_read = ""
         element_write = ""
     else:
-        ns = _namespace_for(cont.element_type, cu)
-        element_read = (
-            f"{ns}::IpcReadContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
-            f"                theMessage,\n"
-            f"                theElement\n"
-            f"            );"
+        element_read = _emit_parts(
+            [_elem_parts("theElement", cont.element_type, cu, True)], True
         )
-        element_write = (
-            f"{ns}::IpcWriteContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
-            f"                theMessage,\n"
-            f"                theElement\n"
-            f"            );"
+        element_write = _emit_parts(
+            [_elem_parts("theElement", cont.element_type, cu, False)], False
         )
 
     return EnrichedContainer(
@@ -938,6 +929,7 @@ def _enrich_interface(
             _is_bool(p.type_name)
             or _is_struct(p.type_name, cu)
             or _uses_boolean_container(p.type_name, cu)
+            or "<Boolean" in ipc_template_type(p.type_name, cu)
             for p in m.parameters
         )
         for m in iface.methods

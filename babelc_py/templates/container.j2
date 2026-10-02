@@ -46,11 +46,11 @@
         theVaryingLengthContainer.assign( theValues, theValues+theNoOfValues );
 {% endif %}
 {% else %}
-        typename IpcPolicy::template ReadContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, true );
-        while (theContainer.hasMore()) {
+        typename IpcPolicy::template ReadContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, false );
+        while (!IpcPolicy::AtEndOfContainer(theMessage)) {
             {{ cont|qualified }}::value_type theElement{};
-            {{ cont.element_read_expr }}
-            theVaryingLengthContainer.push_back( std::move(theElement) );
+{{ cont.element_read_expr }}
+            theVaryingLengthContainer.emplace_back( std::move(theElement) );
         }
 {% endif %}
     }
@@ -65,7 +65,7 @@
 {% else %}
         typename IpcPolicy::template WriteContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, theVaryingLengthContainer.size() );
         for (const auto &theElement : theVaryingLengthContainer) {
-            {{ cont.element_write_expr }}
+{{ cont.element_write_expr }}
         }
 {% endif %}
     }
