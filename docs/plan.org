@@ -489,7 +489,7 @@
    This library is *not generated* — it's hand-written code that depends on the
    generated ~.json.h~ headers.
 
-** TODO [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
+** IN-PROGRESS [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
    Harness: ~tools/prod_compare.py~ / ~tools/prod_compare_all.py~ (paths hardcoded to
    /home/calle/tmp/release/repos and /tmp/opencode; run all 81 headers listed in
    ~babelc_generate(... TYPE json)~ blocks). Result of the first run (54 headers reached
@@ -505,6 +505,20 @@
       member regex only recognises ~= init~). We treat it as optional (more correct, accepts a
       superset on read). Decision needed: parity or correctness. Causes the IMPLEMENTATIONS-only
       diffs in example.h, local_time, dtj_service_types, test_service_swap_data_types etc.
+   RESOLVED (commits "Follow types referenced from included user headers", "JSON: do not generate
+   included types reachable only through interfaces", "Treat brace-initialised fields as required",
+   "JSON: emit using-declarations for namespaces of referred types"):
+   - 1 done: lazy following of referenced structs/enums/typedefs from non-system includes, never
+     included interfaces or unreferenced types (verified against the original with a two-header
+     example). JSON closure starts at main-file types (~CompilationUnit.primary_names~) and does not
+     follow interface signatures, like the original.
+   - 2 done: parity, brace-init fields are required.
+   - New: the original emits ~using ::ns::readJSON/writeJSON/interpretJSON;~ for the namespaces of
+     referred types before each interpret/write template; now replicated.
+   Latest run: 38 headers (where the original works) give identical block sets; the 3 remaining
+   differences are harness name collisions (two ~types.h~, two ~storage_json.h~ share an output dir).
+   Still open: harness should use per-repo output dirs and ~-include cstdint~; the "ours fails"
+   cases and item 3 below.
    3. Other failures to triage: ~annotate attribute cannot be applied to types~ (data_source_persistent.h,
       pre_process rewriting an attribute in an unsupported position), ~unresolvable type ValueType~ /
       ~EmergencyCallType~ (probably same as 1 or using-declarations), persistent_config (vector helper
