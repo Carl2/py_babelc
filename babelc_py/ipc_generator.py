@@ -927,7 +927,7 @@ def _enrich_interface(
             or "<Boolean" in ipc_template_type(p.type_name, cu)
             for p in m.parameters
         )
-        or "<Boolean" in ipc_template_type(m.return_type, cu)
+        or "Boolean" in ipc_template_type(m.return_type, cu)
         for m in iface.methods
     )
     return EnrichedInterface(
