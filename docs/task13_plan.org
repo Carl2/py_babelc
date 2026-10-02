@@ -276,3 +276,21 @@ py_babelc JSON output must avoid all of them:
   =BABEL_JSON_HAVE_SHOP_COLOR_DECLARATIONS_H= (namespace separators collapse to a single =_=).
 - Consequence for Task 17: reference diffs must normalise all guard lines
   (=#ifndef=/=#define=/trailing =#endif= comments), not only the first one.
+
+* Task 14 implementation notes (static templates)
+- New templates: =json_parser.j2=, =json_indent.j2=, =json_predefined_decl.j2=, =json_predefined_impl.j2=,
+  =json_optional_{decl,impl}.j2= and =json_variant_{decl,impl}.j2= (the last four take =ns= = =std= or =boost=).
+  Helper blocks (is_supported_*) reuse the IPC =babel_helpers*.j2= / =container_helpers.j2=.
+- Namespaces are rendered by Jinja globals =ns_begin(names, cpp_std)= / =ns_end(...)= in =jinja_env.py=
+  (nested =namespace a::b= for C++17+, =namespace a { namespace b {= for 14); no =__cplusplus= branches remain.
+- Guards renamed to non-reserved names (=HAVE_BABEL_JSON_INDENT=, =HAVE_STD_OPTIONAL_JSON_DECLARATIONS=, ...).
+- The mangled =readJSON= body of the original output (misplaced =return fromStream=) was re-indented; semantics unchanged.
+- Tests: =tests/test_json_static.py= (clean guards, parser equals reference, g++ -Wall -Werror compile and run of
+  std::optional / std::variant at C++17/20, plain containers at C++14).
+** Refinement of the std:: vs boost:: decision
+The adapter flavour must follow the /types used in the header/: a =std::optional= member needs the std adapter, a
+=boost::optional= member needs the boost one.  =--cpp-std= therefore only controls namespace syntax, the libclang
+=-std=, and should reject std::optional/std::variant with =--cpp-std 14=.  Consequences for Task 16:
+- =ContainerType= does not record std vs boost for optionals (variants have =variant_kind=); add an
+  =optional_kind= (or equivalent) in =clang_parser.py= / =type_model.py=.
+- Orchestration collects the set of used flavours and renders the matching adapter templates.

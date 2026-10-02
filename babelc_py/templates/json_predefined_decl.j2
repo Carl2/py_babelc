@@ -1,0 +1,111 @@
+{# Task 14: predefined interpretJSON/writeJSON declarations. #}
+#ifndef HAVE_BABEL_JSON_DECLARATIONS
+#define HAVE_BABEL_JSON_DECLARATIONS
+
+{{ ns_begin(['babel', 'JSON'], cpp_std) }}
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_arithmetic< T >::value && !std::numeric_limits<T>::has_quiet_NaN && !std::is_same< T, bool >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_arithmetic< T >::value && std::numeric_limits<T>::has_quiet_NaN && !std::is_same< T, bool >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, std::basic_string<CharT> >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, typename ::babel::JSON::parser::CharTraits<CharT>::OtherStringType >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, bool >::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_supported_container<T>::value && !is_fixed_container<T>::value && !is_map_container<T>::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_fixed_container<T>::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_map_container<T>::value  && std::is_same<typename T::key_type,std::basic_string<CharT>>::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_map_container<T>::value  && ! std::is_same<typename T::key_type,std::basic_string<CharT>>::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue );
+
+    template <class CharT, class Traits, class T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::shared_ptr<T> &theValue, Indent theIndent);
+
+    template <class CharT, class T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, std::shared_ptr<T> &theValue );
+
+    template <class CharT, class Traits, class T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::unique_ptr<T> &theValue, Indent theIndent);
+
+    template <class CharT, class T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, std::unique_ptr<T> &theValue );
+
+    template <class CharT, class Traits, class T>
+    std::basic_istream<CharT,Traits>&
+    readJSON( std::basic_istream<CharT,Traits> &fromStream, T &theValue );
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_supported_container<T>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const T &theValues, Indent theIndent );
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_supported_ptr<T>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent theIndent );
+
+    // = Predefined arithmetic non-NaN type support =======================
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_arithmetic<T>::value && !std::numeric_limits<T>::has_quiet_NaN, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent );
+
+    // = Predefined arithmetic NaN type support =======================
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_arithmetic<T>::value && std::numeric_limits<T>::has_quiet_NaN, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent );
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const bool &theValue, Indent );
+
+    template <class CharT, class Traits, class CharIter>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, CharIter theStart, const CharIter theEnd, Indent );
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::string &theValue, Indent theIndent);
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::wstring &theValue, Indent theIndent);
+
+    template <class CharT, class Traits, class K, class V>
+    std::enable_if_t< std::is_same<std::remove_cv_t<K>,std::basic_string<CharT>>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::pair<K,V> &theValue, Indent theIndent );
+
+    template <class CharT, class Traits, class K, class V>
+    std::enable_if_t< !std::is_same<std::remove_cv_t<K>,std::basic_string<CharT>>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::pair<K,V> &theValue, Indent theIndent );
+
+
+{{ ns_end(['babel', 'JSON'], cpp_std) }}
+
+
+#endif

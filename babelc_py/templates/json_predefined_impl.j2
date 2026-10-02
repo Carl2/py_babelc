@@ -1,0 +1,285 @@
+{# Task 14: predefined interpretJSON/writeJSON implementations. #}
+#ifndef HAVE_BABEL_JSON_IMPLEMENTATIONS
+#define HAVE_BABEL_JSON_IMPLEMENTATIONS
+
+{{ ns_begin(['babel', 'JSON'], cpp_std) }}
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_arithmetic< T >::value && !std::numeric_limits<T>::has_quiet_NaN && !std::is_same< T, bool >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        theValue = BABEL_JSON_PARSER_UPCAST( Number<std::basic_string<CharT>>, theJSONValue ).template getNumericValue<T>();
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_arithmetic< T >::value && std::numeric_limits<T>::has_quiet_NaN && !std::is_same< T, bool >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        if (dynamic_cast<const babel::JSON::parser::Null *>(theJSONValue.get())) {
+            theValue = std::numeric_limits<T>::quiet_NaN();
+        }
+        else {
+            theValue = BABEL_JSON_PARSER_UPCAST( Number<std::basic_string<CharT>>, theJSONValue ).template getNumericValue<T>();
+        }}
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, std::basic_string<CharT> >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        theValue = BABEL_JSON_PARSER_UPCAST( String<std::basic_string<CharT>>, theJSONValue ).itsValue;
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, typename ::babel::JSON::parser::CharTraits<CharT>::OtherStringType >::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        theValue = ::babel::JSON::parser::CharTraits< typename ::babel::JSON::parser::CharTraits<CharT>::OtherCharType >::adjust( BABEL_JSON_PARSER_UPCAST( String<std::basic_string<CharT>>, theJSONValue ).itsValue );
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< std::is_same< T, bool >::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        theValue = BABEL_JSON_PARSER_UPCAST( Boolean, theJSONValue ).itsValue;
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_supported_container<T>::value && !is_fixed_container<T>::value && !is_map_container<T>::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        const auto &theActual = BABEL_JSON_PARSER_UPCAST( Array, theJSONValue );
+        theValue.resize(0);
+        for (const auto &theJSONElement : theActual.itsValue) {
+            theValue.resize(theValue.size() + 1);
+            interpretJSON<CharT>( theJSONElement, theValue.back() );
+        }
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_fixed_container<T>::value >
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        const auto &theActual = BABEL_JSON_PARSER_UPCAST( Array, theJSONValue );
+        if (theValue.size() != theActual.itsValue.size()) {
+            throw std::invalid_argument(theJSONValue->getLocation() + "Fixed array of size " + std::to_string(theValue.size()) + " cannot receive array of size " + std::to_string(theActual.itsValue.size()));
+        }
+        for (typename T::size_type i = 0; i < theValue.size(); i++) {
+            interpretJSON<CharT>( theActual.itsValue[i], theValue[i] );
+        }
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_map_container<T>::value  && std::is_same<typename T::key_type,std::basic_string<CharT>>::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        const auto &theActual = BABEL_JSON_PARSER_UPCAST( Object<std::basic_string<CharT>>, theJSONValue );
+        theValue.clear();
+        for (const auto &theJSONPair : theActual.itsValue) {
+            typename T::value_type theNewItem{ theJSONPair.first, typename T::value_type::second_type{} };
+            interpretJSON<CharT>( theJSONPair.second, theNewItem.second );
+            theValue.emplace( theNewItem );
+        }
+    }
+
+    template <class CharT, typename T>
+    std::enable_if_t< is_map_container<T>::value  && ! std::is_same<typename T::key_type,std::basic_string<CharT>>::value>
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, T &theValue ) {
+        const auto &theActual = BABEL_JSON_PARSER_UPCAST( Object<std::basic_string<CharT>>, theJSONValue );
+        theValue.clear();
+        for (const auto &theJSONPair : theActual.itsValue) {
+            typename T::key_type           theKey;
+            std::basic_stringstream<CharT> theStream(theJSONPair.first);
+            readJSON( theStream, theKey );
+            typename T::value_type theNewItem{ theKey, typename T::value_type::second_type{} };
+            interpretJSON<CharT>( theJSONPair.second, theNewItem.second );
+            theValue.emplace( theNewItem );
+        }
+    }
+
+    template <class CharT, class Traits, class T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::shared_ptr<T> &theValue, Indent theIndent) {
+        return theValue ? writeJSON( theStream, *theValue, theIndent ) : (theStream << "null");
+    }
+
+    template <class CharT, class T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, std::shared_ptr<T> &theValue ) {
+        if (dynamic_cast<const babel::JSON::parser::Null*>(theJSONValue.get())) {
+            theValue = std::shared_ptr<T>();
+        }
+        else {
+            T theTemporary;
+            interpretJSON<CharT>( theJSONValue, theTemporary );
+            theValue = std::make_shared<T>(std::move(theTemporary));
+        }
+    }
+
+    template <class CharT, class Traits, class T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::unique_ptr<T> &theValue, Indent theIndent) {
+        return theValue ? writeJSON( theStream, *theValue, theIndent ) : (theStream << "null");
+    }
+
+    template <class CharT, class T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, std::unique_ptr<T> &theValue ) {
+        if (dynamic_cast<const babel::JSON::parser::Null*>(theJSONValue.get())) {
+            theValue = std::unique_ptr<T>();
+        }
+        else {
+            T theTemporary;
+            interpretJSON<CharT>( theJSONValue, theTemporary );
+            theValue = std::make_unique<T>(std::move(theTemporary));
+        }
+    }
+
+    template <class CharT, class Traits, class T>
+    std::basic_istream<CharT,Traits>&
+    readJSON( std::basic_istream<CharT,Traits> &fromStream, T &theValue ) {
+        if (const auto theJSONValue = babel::JSON::parser::readValue( fromStream )) {
+            interpretJSON<CharT>( theJSONValue, theValue );
+        }
+        else {
+            throw std::invalid_argument("Failed to read JSON from stream");
+        }
+        return fromStream;
+    }
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_supported_container<T>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const T &theValues, Indent theIndent ) {
+        constexpr char theStart = is_map_container<T>::value ? '{' : '[';
+        constexpr char theEnd   = is_map_container<T>::value ? '}' : ']';
+
+        if (theValues.empty()) {
+            return theStream << theStart << theEnd;
+        }
+        else {
+            const auto theNextIndent = theIndent.next();
+            auto       theValue      = theValues.begin();
+
+            theStream << theIndent << theStart << theNextIndent;
+
+            for (;;) {
+                writeJSON( theStream, *theValue, theNextIndent );
+
+                if (++theValue == theValues.end()) {
+                    break;
+                }
+
+                theStream << ',' << theNextIndent;
+            }
+
+            return theStream << theIndent << theEnd;
+        }
+    }
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_supported_ptr<T>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent theIndent ) {
+        return theValue ?
+                writeJSON( toStream, *theValue, theIndent.next() )
+                    :
+                (toStream << "null");
+    }
+
+    // = Predefined arithmetic non-NaN type support =======================
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_arithmetic<T>::value && !std::numeric_limits<T>::has_quiet_NaN, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent ) {
+        using IOType = std::conditional_t<
+            (std::is_same<T,std::uint8_t>::value || std::is_same<T,std::uint16_t>::value),
+            std::uint32_t,
+            std::conditional_t< (std::is_same<T,std::int8_t>::value || std::is_same<T,std::int16_t>::value),
+                std::int32_t,
+                T> >;
+
+        return (toStream << static_cast<IOType>(theValue));
+    }
+
+    // = Predefined arithmetic NaN type support =======================
+
+    template <class CharT, class Traits, class T>
+    std::enable_if_t< is_arithmetic<T>::value && std::numeric_limits<T>::has_quiet_NaN, std::basic_ostream<CharT,Traits>&>
+    writeJSON(std::basic_ostream<CharT,Traits>& toStream, const T &theValue, Indent ) {
+        using IOType = std::conditional_t<
+            (std::is_same<T,std::uint8_t>::value || std::is_same<T,std::uint16_t>::value),
+            std::uint32_t,
+            std::conditional_t< (std::is_same<T,std::int8_t>::value || std::is_same<T,std::int16_t>::value),
+                std::int32_t,
+                T> >;
+
+        return std::isnan(theValue) ? (toStream << "null") : (toStream << static_cast<IOType>(theValue));
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const bool &theValue, Indent ) {
+        return theStream << (theValue ? "true" : "false" );
+    }
+
+    template <class CharT, class Traits, class CharIter>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, CharIter theStart, const CharIter theEnd, Indent ) {
+        using CharTraits = ::babel::JSON::parser::CharTraits<CharT>;
+        theStream << BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'"');
+        while (theStart != theEnd) {
+            const CharT theChar = CharTraits::adjust(*theStart++);
+            switch(theChar) {
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\b'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\b"),2);  break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\t'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\t"),2);  break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\f'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\f"),2);  break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\n'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\n"),2);  break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\r'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\r"),2);  break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'\\'): theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\\\"),2); break;
+            case BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'"') : theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\\""),2); break;
+            default: {
+                if (std::isprint(theChar)) {
+                    theStream.put(theChar);
+                }
+                else {
+                    theStream.write(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"\\u00"),4);
+                    theStream.put(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"0123456789ABCDEF")[(theChar >> 4) & 0xFu]);
+                    theStream.put(BABEL_JSON_PARSER_STRING_LITERAL(CharT,"0123456789ABCDEF")[(theChar >> 0) & 0xFu]);
+                }
+            }
+            break;
+            }
+        }
+        return theStream << BABEL_JSON_PARSER_CHAR_LITERAL(CharT,'"');
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::string &theValue, Indent theIndent) {
+        return writeJSON( theStream, &*theValue.begin(), &*theValue.end(), theIndent );
+    }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::wstring &theValue, Indent theIndent) {
+        return writeJSON( theStream, &*theValue.begin(), &*theValue.end(), theIndent );
+    }
+
+    template <class CharT, class Traits, class K, class V>
+    std::enable_if_t< std::is_same<std::remove_cv_t<K>,std::basic_string<CharT>>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::pair<K,V> &theValue, Indent theIndent ) {
+        const auto theNextIndent = theIndent.next();
+
+        return writeJSON( (writeJSON( theStream, theValue.first, theNextIndent) << (theIndent.isActive() ? " : " : ":")), theValue.second, theNextIndent );
+    }
+
+    template <class CharT, class Traits, class K, class V>
+    std::enable_if_t< !std::is_same<std::remove_cv_t<K>,std::basic_string<CharT>>::value, std::basic_ostream<CharT,Traits>&>
+    writeJSON( std::basic_ostream<CharT,Traits>&theStream, const std::pair<K,V> &theValue, Indent theIndent ) {
+        std::ostringstream theKeyStream;
+        const auto         theNextIndent = theIndent.next();
+
+        if (writeJSON( theKeyStream, theValue.first, Indent(0) )) {
+            (void)writeJSON( (writeJSON( theStream, theKeyStream.str(), theNextIndent) << (theIndent.isActive() ? " : " : ":")), theValue.second, theNextIndent );
+        }
+        else {
+            theStream.setstate(std::ios::failbit);
+        }
+        return theStream;
+    }
+
+
+{{ ns_end(['babel', 'JSON'], cpp_std) }}
+
+
+#endif

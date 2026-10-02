@@ -1,0 +1,44 @@
+{# Task 14: variant adapter implementations. ns = 'std' or 'boost'. #}
+#ifndef HAVE_{{ ns|upper }}_VARIANT_JSON_IMPLEMENTATIONS
+#define HAVE_{{ ns|upper }}_VARIANT_JSON_IMPLEMENTATIONS
+
+{{ ns_begin(['babel', 'JSON'], cpp_std) }}
+
+    template <class CharT, typename ResultVariant>
+    void
+    interpretJSONVariant( const babel::JSON::parser::Value &theJSONValue, ResultVariant & ) {
+        throw std::invalid_argument(theJSONValue->getLocation() + "No fitting variant type.");
+    }
+
+    template <class CharT, typename ResultVariant, typename Attempt, typename... theRest>
+    void
+    interpretJSONVariant( const babel::JSON::parser::Value &theJSONValue, ResultVariant &theValue ) {
+        try {
+            Attempt theAttempt;
+            interpretJSON<CharT>( theJSONValue, theAttempt );
+            theValue = theAttempt;
+        }
+        catch (const std::invalid_argument &) {
+            interpretJSONVariant<CharT, ResultVariant, theRest...>( theJSONValue, theValue );
+        }
+    }
+
+    template <class CharT, typename... T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ ns }}::variant<T...> &theValue ) {
+        interpretJSONVariant<CharT, {{ ns }}::variant<T...>, T...>( theJSONValue, theValue );
+    }
+
+    template <class CharT, class Traits, typename... T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&toStream, const {{ ns }}::variant<T...> &theValue, Indent theIndent ) {
+        return {{ "boost::apply_visitor" if ns == "boost" else "std::visit" }}( [&toStream,&theIndent] ( const auto &theActual ) -> std::basic_ostream<CharT,Traits>&  {
+                                         return writeJSON( toStream, theActual, theIndent );
+                                     },
+                                     theValue );
+    }
+
+{{ ns_end(['babel', 'JSON'], cpp_std) }}
+
+
+#endif

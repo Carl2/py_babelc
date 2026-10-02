@@ -363,7 +363,7 @@
    - Type closure computation (transitive type dependencies)
    The design document must be approved before implementation begins.
 
-** TODO [#A] Task 14: JSON generator — static boilerplate templates
+** DONE [#A] Task 14: JSON generator — static boilerplate templates
    Create the fixed templates that are emitted once per output file:
    - ~json_parser.j2~ — the full embedded ~babel::JSON::parser~ (verbatim from
      ~babel_json_parser.h.txt~, stripped of C++17 guards for C++20)

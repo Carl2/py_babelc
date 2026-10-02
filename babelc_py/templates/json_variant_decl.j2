@@ -1,0 +1,26 @@
+{# Task 14: variant adapter declarations. ns = 'std' or 'boost'. #}
+#ifndef HAVE_{{ ns|upper }}_VARIANT_JSON_DECLARATIONS
+#define HAVE_{{ ns|upper }}_VARIANT_JSON_DECLARATIONS
+
+{{ ns_begin(['babel', 'JSON'], cpp_std) }}
+
+    template <class CharT, typename ResultVariant>
+    void
+    interpretJSONVariant( const babel::JSON::parser::Value &theJSONValue, ResultVariant & );
+
+    template <class CharT, typename ResultVariant, typename Attempt, typename... theRest>
+    void
+    interpretJSONVariant( const babel::JSON::parser::Value &theJSONValue, ResultVariant &theValue );
+
+    template <class CharT, typename... T>
+    void
+    interpretJSON( const babel::JSON::parser::Value &theJSONValue, {{ ns }}::variant<T...> &theValue );
+
+    template <class CharT, class Traits, typename... T>
+    std::basic_ostream<CharT,Traits>&
+    writeJSON( std::basic_ostream<CharT,Traits>&toStream, const {{ ns }}::variant<T...> &theValue, Indent theIndent );
+
+{{ ns_end(['babel', 'JSON'], cpp_std) }}
+
+
+#endif

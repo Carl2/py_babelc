@@ -1,0 +1,39 @@
+{# Task 14: babel::JSON::Indent helper. #}
+#ifndef HAVE_BABEL_JSON_INDENT
+#define HAVE_BABEL_JSON_INDENT
+
+{{ ns_begin(['babel', 'JSON'], cpp_std) }}
+
+    class Indent {
+    public:
+        explicit Indent  ( unsigned int theStep )       __attribute__((weak));
+        Indent   next    ()                       const __attribute__((weak));
+        bool     isActive()                       const __attribute__((weak));
+
+        template <class CharT, class Traits>
+        friend std::basic_ostream<CharT,Traits>& operator <<( std::basic_ostream<CharT,Traits>&theStream, const Indent &theIndent );
+    private:
+        unsigned int itsStep;
+    };
+
+    inline Indent::Indent( unsigned int theStep ) : itsStep(theStep) {}
+
+    inline Indent Indent::next() const { return Indent( itsStep ? (itsStep+1) : 0 ); }
+
+    inline bool Indent::isActive() const { return itsStep != 0; }
+
+    template <class CharT, class Traits>
+    std::basic_ostream<CharT,Traits>& operator <<( std::basic_ostream<CharT,Traits> &theStream, const Indent &theIndent ) {
+        static const char theIndentStep[] = "    ";
+        if (theIndent.itsStep) {
+            theStream << std::endl;
+            for (auto i = 0u; i < (theIndent.itsStep-1); i++) {
+                theStream << theIndentStep;
+            }
+        }
+        return theStream;
+    }
+{{ ns_end(['babel', 'JSON'], cpp_std) }}
+
+
+#endif

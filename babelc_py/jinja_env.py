@@ -57,4 +57,21 @@ def create_env(**extra_filters: Any) -> jinja2.Environment:
         ns_close=ns_close,
         **extra_filters,
     )
+    env.globals.update(ns_begin=ns_begin, ns_end=ns_end)
     return env
+
+
+def ns_begin(names: Any, cpp_std: int = 20) -> str:
+    """Open namespace(s): 'namespace a::b {' for C++17+, nested blocks for C++14."""
+    names = list(names)
+    if not names:
+        return "namespace {"
+    if cpp_std >= 17:
+        return f"namespace {'::'.join(names)} {{"
+    return " ".join(f"namespace {n} {{" for n in names)
+
+
+def ns_end(names: Any, cpp_std: int = 20) -> str:
+    """Close the namespace(s) opened by ns_begin."""
+    count = 1 if cpp_std >= 17 else max(len(list(names)), 1)
+    return "}" * count
