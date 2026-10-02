@@ -45,16 +45,26 @@ def main():
         "... (default: 20). 14 selects boost:: instead of std:: adapters.",
     )
     args = parser.parse_args()
+    code = generate(
+        args.header,
+        args.output,
+        args.type,
+        discover_system_cpp_includes() + args.clang_arg,
+        args.cpp_std,
+    )
+    if code:
+        sys.exit(code)
 
-    system_includes = discover_system_cpp_includes()
 
+def generate(header, output, kind, clang_args, cpp_std):
+    """Run the pipeline and return a process exit code (0 = success)."""
     try:
         result = (
             Just(
                 {
-                    "header_path": args.header,
-                    "clang_args": system_includes + args.clang_arg,
-                    "cpp_std": args.cpp_std,
+                    "header_path": header,
+                    "clang_args": clang_args,
+                    "cpp_std": cpp_std,
                 }
             )
             .bind(rewrite_babelc_attributes)
@@ -62,9 +72,9 @@ def main():
             .bind(extract_type_model)
             .bind(validate_type_model)
             .bind(
-                render_json_header(args.output)
-                if args.type == "json"
-                else render_ipc_header(args.output)
+                render_json_header(output)
+                if kind == "json"
+                else render_ipc_header(output)
             )
             .bind(write_output)
         )
@@ -73,11 +83,11 @@ def main():
 
     if result.is_nothing():
         print(f"py-babelc: {result.value}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
-    warnings = result.value.get("validation_warnings", [])
-    for w in warnings:
+    for w in result.value.get("validation_warnings", []):
         print(f"py-babelc: warning: {w}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":

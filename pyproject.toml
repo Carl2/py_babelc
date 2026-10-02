@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 py-babelc = "babelc_py.__main__:main"
+babelc-compat = "babelc_py.compat:main"
 
 [dependency-groups]
 dev = [
