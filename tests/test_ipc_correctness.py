@@ -144,6 +144,10 @@ def normalise(text: str) -> str:
         flags=re.M,
     )
 
+    # py_babelc adds <cstdint> when fixed-width integers are used (IWYU);
+    # the original relies on the user's header.
+    text = text.replace("#include <cstdint>\n", "")
+
     # Normalise header include path
     text = re.sub(r'#include ".*\.h"', '#include "HEADER"', text, count=1)
 

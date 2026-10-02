@@ -827,6 +827,16 @@ def _create_jinja_env() -> jinja2.Environment:
     return create_env(dbus_interface_name=_dbus_interface_name_filter)
 
 
+_FIXED_WIDTH_RE = re.compile(r"\bstd::u?int(?:8|16|32|64)_t\b")
+
+
+def _ensure_cstdint(text: str) -> str:
+    """Include <cstdint> (IWYU) when the output uses fixed-width integers."""
+    if "#include <cstdint>" in text or not _FIXED_WIDTH_RE.search(text):
+        return text
+    return text.replace("#include <array>\n", "#include <array>\n#include <cstdint>\n", 1)
+
+
 def render_ipc_header(output_path: str) -> callable:
     """Curried: captures output path, returns a bind-compatible pipeline step.
 
@@ -861,7 +871,11 @@ def render_ipc_header(output_path: str) -> callable:
             )
 
             return Just(
-                {**ctx, "rendered_output": rendered, "output_path": output_path}
+                {
+                    **ctx,
+                    "rendered_output": _ensure_cstdint(rendered),
+                    "output_path": output_path,
+                }
             )
         except Exception as e:
             return Maybe(value=f"Failed to render IPC header: {e}", monoid=False)
