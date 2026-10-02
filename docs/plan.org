@@ -523,3 +523,13 @@
       pre_process rewriting an attribute in an unsupported position), ~unresolvable type ValueType~ /
       ~EmergencyCallType~ (probably same as 1 or using-declarations), persistent_config (vector helper
       and several types missing).
+
+** DONE [#A] Task 20: IPC fixes from production build (app-core-data-engine)
+Built app-core-data-engine with the POC SDK and py-babelc; ~make~ now succeeds.
+- Included user headers keep -I dirs as user includes (not -isystem); enum attributes after underlying type are moved before the name.
+- IPC: map and optional container templates, unified dependency order (containers, enums, structs, variants).
+- IPC: wire view types (~_ArrayView~, ~VariantType~, ~std::array<..,1>~), alias canonicalisation, vector read loop like original.
+- IPC: complicated return types use IpcRead/WriteContainer; Boolean typedef for return types.
+- IPC: variant read/write code (~variant.j2~; boost ~which()~/~boost::get~, std ~index()~/~std::get~).
+- Struct TupleView uses wire view types for container fields.
+Open: validation parity with original, rvalue-ref params, x86-only include discovery, interface_name regex.
