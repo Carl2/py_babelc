@@ -146,20 +146,21 @@ class EnrichedInterface:
 
 def _lookup_type(type_name: str, cu: CompilationUnit) -> Any:
     """Look up a type by name in the compilation unit."""
+    type_name = type_name.removeprefix("::")
     for enum in cu.enums:
-        if enum.qualified_name == type_name or enum.name == type_name:
+        if enum.qualified_name.removeprefix("::") == type_name or enum.name == type_name:
             return enum
     for struct in cu.structs:
-        if struct.qualified_name == type_name or struct.name == type_name:
+        if struct.qualified_name.removeprefix("::") == type_name or struct.name == type_name:
             return struct
     for cont in cu.containers:
-        if cont.qualified_name == type_name or cont.name == type_name:
+        if cont.qualified_name.removeprefix("::") == type_name or cont.name == type_name:
             return cont
     for variant in cu.variants:
-        if variant.qualified_name == type_name or variant.name == type_name:
+        if variant.qualified_name.removeprefix("::") == type_name or variant.name == type_name:
             return variant
     for alias in cu.aliases:
-        if alias.qualified_name == type_name or alias.name == type_name:
+        if alias.qualified_name.removeprefix("::") == type_name or alias.name == type_name:
             return alias
     return None
 
@@ -230,6 +231,7 @@ def _call_open(type_name: str, cu: CompilationUnit, op: str, indent: str) -> str
 
 def _resolve_alias_target(type_name: str, cu: CompilationUnit) -> str:
     """Resolve a type alias to its target, returning the original if not an alias."""
+    type_name = type_name.removeprefix("::") if type_name.startswith("::") else type_name
     for alias in cu.aliases:
         if alias.qualified_name == type_name or alias.name == type_name:
             return alias.target_type

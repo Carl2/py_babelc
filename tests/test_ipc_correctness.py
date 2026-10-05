@@ -316,3 +316,13 @@ def test_variant_enum_alternatives_use_enum_reference(tmp_path):
     text = out.read_text()
     assert text.count("babel::ipc::EnumReference<") >= 2
     assert "if (!theErrorString.empty())" in text
+
+
+def test_leading_colon_param_types_use_containers(tmp_path):
+    from pathlib import Path
+    import subprocess, sys
+    hdr = Path(__file__).parent / "headers" / "ipc_leading_colons.h"
+    subprocess.run([sys.executable, "-m", "babelc_py.compat", "-std=gnu++20", "-babelcCompiler=g++",
+                    "-babelcForce", "-babelcOutput=Ipc", f"-babelcDirectory={tmp_path}", str(hdr)], check=True)
+    out = (tmp_path / "ipc_leading_colons.ipc.h").read_text()
+    assert "IpcWriteContainer(\n                theIpcMessage,\n                items" in out.replace("<IpcPolicy, typename IpcPolicy::Boolean>", "") or "IpcWriteContainer" in out.split("void f(")[1]
