@@ -442,6 +442,14 @@ def _elem_parts(
             return False, f"&babel::ipc::StringReference({acc})"
         if _is_bool(type_name):
             return False, f"&babel::ipc::BooleanReference<Boolean>({acc})"
+        if enum is not None:
+            return False, (
+                f"&babel::ipc::EnumReference<\n"
+                f"                    {_qualified_name_for(type_name, cu)},\n"
+                f"                    {_qualified_name_for_ns(enum.namespace)}"
+                f"::IpcEnumValidate\n"
+                f"                >({acc}, theErrorString )"
+            )
         return False, f"&{acc}"
     if _is_string(type_name):
         return False, f"{acc}.c_str()"
@@ -473,7 +481,14 @@ def _emit_parts(parts: list[tuple[bool, str]], reading: bool) -> str:
         else:
             run.append(text)
     flush()
-    return "\n".join(out)
+    text = "\n".join(out)
+    if reading and "theErrorString )" in text:
+        text = (
+            "            std::string theErrorString;\n" + text +
+            "\n            if (!theErrorString.empty()) "
+            "{ throw std::invalid_argument( theErrorString ); }"
+        )
+    return text
 
 
 def _uses_boolean_container(type_name: str, cu: CompilationUnit) -> bool:

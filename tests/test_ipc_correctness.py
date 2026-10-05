@@ -301,3 +301,18 @@ def test_ipc_type_policy_types(tmp_path):
     assert "typename IpcPolicy::Object, typename IpcPolicy::FileDescriptor" in text or (
         "addMethod< typename IpcPolicy::FileDescriptor, typename IpcPolicy::Object" in text
     )
+
+
+def test_variant_enum_alternatives_use_enum_reference(tmp_path):
+    from tests.test_json_correctness import boost_include
+    from babelc_py.__main__ import generate
+
+    inc = boost_include()
+    if not inc:
+        pytest.skip("boost not available")
+    out = tmp_path / "o.ipc.h"
+    hdr = HEADERS_DIR / "ipc_variant_enum.h"
+    assert generate(str(hdr), str(out), "ipc", discover_system_cpp_includes() + [f"-I{inc}"], 17) == 0
+    text = out.read_text()
+    assert text.count("babel::ipc::EnumReference<") >= 2
+    assert "if (!theErrorString.empty())" in text
