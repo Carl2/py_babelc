@@ -520,10 +520,23 @@ def _is_from_main_file(cursor: Cursor, main_file: str) -> bool:
     return loc.file.name == main_file
 
 
+_TOOLCHAIN_HEADER_MARKERS = ("/c++/", "/gcc/", "/clang/", "/boost/", "/bits/")
+
+
 def _is_user_header(cursor: Cursor) -> bool:
-    """True for cursors located in any non-system file."""
+    """True for cursors in any file except compiler/standard/boost headers.
+
+    Project headers installed into a sysroot (e.g. /usr/include/ocp/...)
+    count as system headers to the compiler, but the original babelc follows
+    them too, so only well-known toolchain locations are excluded.
+    """
     loc = cursor.location
-    return loc.file is not None and not loc.is_in_system_header
+    if loc.file is None:
+        return False
+    if not loc.is_in_system_header:
+        return True
+    name = loc.file.name
+    return not any(m in name for m in _TOOLCHAIN_HEADER_MARKERS)
 
 
 def _walk_cursor(
