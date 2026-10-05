@@ -489,7 +489,7 @@
    This library is *not generated* — it's hand-written code that depends on the
    generated ~.json.h~ headers.
 
-** IN-PROGRESS [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
+** DONE [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
    Harness: ~tools/prod_compare.py~ / ~tools/prod_compare_all.py~ (paths hardcoded to
    /home/calle/tmp/release/repos and /tmp/opencode; run all 81 headers listed in
    ~babelc_generate(... TYPE json)~ blocks). Result of the first run (54 headers reached
@@ -533,3 +533,23 @@ Built app-core-data-engine with the POC SDK and py-babelc; ~make~ now succeeds.
 - IPC: variant read/write code (~variant.j2~; boost ~which()~/~boost::get~, std ~index()~/~std::get~).
 - Struct TupleView uses wire view types for container fields.
 Open: validation parity with original, rvalue-ref params, x86-only include discovery, interface_name regex.
+
+** DONE [#A] Task 21: Sweep over all production repos
+~tools/sweep.py REPOS OUT --orig <SDK babelc> --boost <dir>~ runs py_babelc (and the original on failure) over every ~babelc_generate()~ header in ~/home/calle/tmp/release/repos~ (master repos fast-forwarded first).
+Result: 670 jobs: 553 ok, 49 fail in both tools (missing include paths for ~ocp/icc/*~, ~script_types.h~, ~spapi_defines.h~, ~nlohmann/json.hpp~; harness limits), 68 skipped (header not found). No case where the original works and py_babelc fails.
+Harness: suffix search for headers (incl. ~dep/*~), ~-include cstdint~, ~dep/*/include~ dirs.
+Found and fixed: ~ipc_type("Object"|"FileDescriptor")~ was never implemented in the IPC generator (types went over the wire as plain string/enum). Now ~IpcPolicy::<Kind>::IpcRead/WriteContainer~ plus ~typename IpcPolicy::<Kind>~ in signatures, matching the original (test ~test_ipc_type_policy_types~). V011 accepts string aliases.
+Open: 68 skipped headers not triaged; rebuild app-core-data-engine and app-driver-authentication with the fix.
+
+** TODO [#A] Task 22: py-babelc as default babelc in the Yocto image build
+Goal: ~kas build kas/portable.yml --target aphrodite-portable-image~ uses py_babelc for all recipes; then build an SDK for colleagues. Decisions (see org-roam note py-babelc_in_yocto_image_build): tarball in ~files/~ for now; real licences for wheel recipes; py-babelc becomes ~babelc~, C++ kept as ~babelc-cpp~; only ~kas/portable.yml~ (note ~portable-vvcm.yml~); Stream/Dep generators are unused in production and unsupported.
+Subtasks:
+1. TODO py-babelc recipe: install ~babelc~ and ~py-babelc~ wrapper, PROVIDES babelc-native, DEPENDS python3-native, python3-jinja2, python3-libclang-pip, python3-pymonad; BBCLASSEXTEND native nativesdk.
+2. TODO Recipes ~python3-libclang-pip~ (libclang 18.1.1 wheel) and ~python3-pymonad~ (2.4.0 wheel): unzip into site-packages, native and nativesdk, correct LICENSE/LIC_FILES_CHKSUM.
+3. TODO Rename C++ recipe to ~babelc-cpp~ (keep ~sdbus-policy.h~ shipped from the target variant); decide which recipe ships ~sdbus-policy.h~.
+4. TODO ~kas/portable.yml~: ~PREFERRED_PROVIDER_babelc-native = "py-babelc"~ in ~local_conf_header~.
+5. TODO ~sspc-sdk.bb~: nativesdk-babelc -> nativesdk-py-babelc, add nativesdk python deps, keep babelc-dev.
+6. TODO Validate on one recipe (app-service-discovery) with ~bitbake~, then the full image.
+7. TODO Build SDK, install, build app-core-data-engine and app-service-discovery without ~PY_BABELC_PYTHON~.
+8. TODO Re-archive py_babelc HEAD into the recipe tarball; later switch to a GitHub SRC_URI.
+Open before publishing: sanitise history/tools (author email, home paths), licence/attribution for original babelc text, revoke the token embedded in the git remote URL.
