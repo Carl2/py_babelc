@@ -381,8 +381,10 @@ def validate_attributes(cu: CompilationUnit) -> list[ValidationResult]:
     for alias in cu.aliases:
         for ann in alias.annotations:
             if ann.name == "ipc_type":
-                # Check if the alias resolves to an enum
-                if alias.qualified_name not in enum_names:
+                # Enum aliases and string aliases (e.g. "Object" D-Bus
+                # object paths) are accepted by the original babelc.
+                if (alias.qualified_name not in enum_names
+                        and "string" not in alias.target_type):
                     results.append(
                         ValidationResult(
                             rule_id="V011",

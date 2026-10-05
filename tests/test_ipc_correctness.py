@@ -287,3 +287,17 @@ def test_variant_ipc_code_generated(tmp_path):
     text = out.read_text()
     assert "ReadVariantScope" in text and "WriteVariantScope" in text
     assert "Unsupported variant type received" in text
+
+
+def test_ipc_type_policy_types(tmp_path):
+    from babelc_py.__main__ import generate
+
+    out = tmp_path / "o.ipc.h"
+    hdr = HEADERS_DIR / "ipc_policy_types.h"
+    assert generate(str(hdr), str(out), "ipc", discover_system_cpp_includes(), 17) == 0
+    text = out.read_text()
+    assert "IpcPolicy::Object::IpcReadContainer(" in text
+    assert "IpcPolicy::FileDescriptor::IpcWriteContainer(" in text
+    assert "typename IpcPolicy::Object, typename IpcPolicy::FileDescriptor" in text or (
+        "addMethod< typename IpcPolicy::FileDescriptor, typename IpcPolicy::Object" in text
+    )

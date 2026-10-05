@@ -184,9 +184,48 @@ def _is_variant(type_name: str, cu: CompilationUnit) -> bool:
     return isinstance(resolved, VariantType)
 
 
+def _ann_policy(ann_holder) -> str | None:
+    for a in getattr(ann_holder, "annotations", ()):
+        if a.name == "ipc_type":
+            return a.value
+    return None
+
+
+def _policy_kind(type_name: str, cu: CompilationUnit) -> str | None:
+    """IpcPolicy member (Object, FileDescriptor, ...) selected by ipc_type."""
+    seen: set[str] = set()
+    cur = type_name
+    while cur not in seen:
+        seen.add(cur)
+        r = _lookup_type(cur, cu)
+        kind = _ann_policy(r) if r is not None else None
+        if kind:
+            return kind
+        if not isinstance(r, AliasType):
+            return None
+        cur = r.target_type
+    return None
+
+
 def _get_enum(type_name: str, cu: CompilationUnit) -> EnumType | None:
     resolved = _lookup_type(type_name, cu)
-    return resolved if isinstance(resolved, EnumType) else None
+    if isinstance(resolved, EnumType) and _ann_policy(resolved) is None:
+        return resolved
+    return None
+
+
+def _call_open(type_name: str, cu: CompilationUnit, op: str, indent: str) -> str:
+    """Text up to and including the '(' of the IpcRead/WriteContainer call."""
+    kind = _policy_kind(type_name, cu)
+    if kind:
+        qn = _qualified_name_for(type_name, cu)
+        return (
+            f"static_assert( IpcPolicy::{kind}::template Compatible<typename {qn}>::value, "
+            f'"You cant use type {qn} as a IpcPolicy::{kind}");\n'
+            f"{indent}IpcPolicy::{kind}::Ipc{op}Container("
+        )
+    ns = _namespace_for(type_name, cu)
+    return f"{ns}::Ipc{op}Container<IpcPolicy, typename IpcPolicy::Boolean>("
 
 
 def _resolve_alias_target(type_name: str, cu: CompilationUnit) -> str:
@@ -207,6 +246,8 @@ def _is_bool(type_name: str) -> bool:
 
 def _is_complicated_field(type_name: str, cu: CompilationUnit) -> bool:
     """True if a field with this type requires a separate IpcRead/WriteContainer call."""
+    if _policy_kind(type_name, cu):
+        return True
     if _is_struct(type_name, cu):
         return True
     if _is_container(type_name, cu):
@@ -227,6 +268,9 @@ def _is_complicated_field(type_name: str, cu: CompilationUnit) -> bool:
 
 def ipc_template_type(type_name: str, cu: CompilationUnit) -> str:
     """Map a C++ type to its TupleView/ArrayView template argument."""
+    kind = _policy_kind(type_name, cu)
+    if kind:
+        return f"typename IpcPolicy::{kind}"
     if _is_string(type_name):
         return "const char *"
     if _is_bool(type_name):
@@ -323,9 +367,8 @@ def _read_expr_for_field(
         )
     if _is_complicated_field(type_name, cu):
         qn = _qualified_name_for(type_name, cu)
-        ns = _namespace_for(type_name, cu)
         return (
-            f"{ns}::IpcReadContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"{_call_open(type_name, cu, 'Read', '        ')}\n"
             f"            theMessage,\n"
             f"            theStruct.{field_name}\n"
             f"        );"
@@ -344,9 +387,8 @@ def _write_expr_for_field(field_name: str, type_name: str, cu: CompilationUnit) 
     if enum is not None:
         return f"static_cast<{enum.underlying_type}>(theStruct.{field_name})"
     if _is_complicated_field(type_name, cu):
-        ns = _namespace_for(type_name, cu)
         return (
-            f"{ns}::IpcWriteContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"{_call_open(type_name, cu, 'Write', '        ')}\n"
             f"            theMessage,\n"
             f"            theStruct.{field_name}\n"
             f"        );"
@@ -387,10 +429,9 @@ def _elem_parts(
 ) -> tuple[bool, str]:
     """(is_complicated, text) for one element access ``acc``."""
     if _is_complicated_field(type_name, cu):
-        ns = _namespace_for(type_name, cu)
         op = "Read" if reading else "Write"
         return True, (
-            f"{ns}::Ipc{op}Container<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"{_call_open(type_name, cu, op, '            ')}\n"
             f"                theMessage,\n"
             f"                {acc}\n"
             f"            );"
@@ -664,9 +705,8 @@ def _method_read_block(method: Method, cu: CompilationUnit) -> str:
         p = params[i]
         if _is_complicated_field(p.type_name, cu):
             # Emit IpcReadContainer for this param
-            ns = _namespace_for(p.type_name, cu)
             lines.append(
-                f"            {ns}::IpcReadContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+                f"            {_call_open(p.type_name, cu, 'Read', '            ')}\n"
                 f"                theArguments,\n"
                 f"                {p.name}\n"
                 f"            );"
@@ -716,9 +756,8 @@ def _method_client_write_block(method: Method, cu: CompilationUnit) -> str:
         p = params[i]
         if _is_complicated_field(p.type_name, cu):
             # Emit IpcWriteContainer for this param
-            ns = _namespace_for(p.type_name, cu)
             lines.append(
-                f"            {ns}::IpcWriteContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+                f"            {_call_open(p.type_name, cu, 'Write', '            ')}\n"
                 f"                theIpcMessage,\n"
                 f"                {p.name}\n"
                 f"            );"
@@ -796,9 +835,8 @@ def _write_return_block(method: Method, cu: CompilationUnit) -> str:
     if method.return_type == "void":
         return ""
     if _is_complicated_field(method.return_type, cu):
-        ns = _namespace_for(method.return_type, cu)
         return (
-            f"            {ns}::IpcWriteContainer<IpcPolicy, typename IpcPolicy::Boolean>(\n"
+            f"            {_call_open(method.return_type, cu, 'Write', '            ')}\n"
             f"                theReturnValue,\n"
             f"                theProxy.{method.name}({_method_params_forward(method)})\n"
             f"            );\n"
@@ -853,11 +891,8 @@ def _client_read_return_block(method: Method, cu: CompilationUnit) -> str:
         )
         lines.append("            );")
     elif _is_complicated_field(rt, cu):
-        ns = _namespace_for(rt, cu)
         lines.append("")
-        lines.append(
-            f"            {ns}::IpcReadContainer<IpcPolicy, typename IpcPolicy::Boolean>("
-        )
+        lines.append(f"            {_call_open(rt, cu, 'Read', '            ')}")
         lines.append("                theMessageReturnValue,")
         lines.append("                theIpcReturnValue")
         lines.append("            );")
@@ -995,7 +1030,7 @@ def _canonical_type(type_name: str, cu: CompilationUnit) -> str:
     while cur not in seen:
         seen.add(cur)
         r = _lookup_type(cur, cu)
-        if not isinstance(r, AliasType):
+        if not isinstance(r, AliasType) or _ann_policy(r):
             break
         cur = r.target_type
         if _is_string(cur) or _is_bool(cur) or _get_enum(cur, cu) is not None:
