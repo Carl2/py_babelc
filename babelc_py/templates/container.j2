@@ -47,11 +47,23 @@
 {% endif %}
 {% else %}
         typename IpcPolicy::template ReadContainerScope<{{ cont.name }}_ArrayView<Boolean,IpcPolicy>> theContainer( theMessage, false );
+{% if cont.container_kind == "array" %}
+        std::size_t theIndex = 0;
+        while (!IpcPolicy::AtEndOfContainer(theMessage)) {
+            {{ cont|qualified }}::value_type theElement{};
+{{ cont.element_read_expr }}
+            if (theIndex >= theVaryingLengthContainer.size()) {
+                throw std::invalid_argument("Too many elements for fixed size array");
+            }
+            theVaryingLengthContainer[theIndex++] = std::move(theElement);
+        }
+{% else %}
         while (!IpcPolicy::AtEndOfContainer(theMessage)) {
             {{ cont|qualified }}::value_type theElement{};
 {{ cont.element_read_expr }}
             theVaryingLengthContainer.emplace_back( std::move(theElement) );
         }
+{% endif %}
 {% endif %}
     }
     template <class IpcPolicy, typename Boolean, typename MessageT>
