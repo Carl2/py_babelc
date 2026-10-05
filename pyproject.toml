@@ -3,6 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
+license = { text = "GPL-2.0-only" }
 name = "py-babelc"
 version = "0.1.0"
 description = "Python/libclang D-Bus IPC code generator — replacement for babelc"
