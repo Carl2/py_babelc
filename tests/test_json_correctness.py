@@ -117,3 +117,13 @@ def test_generated_headers_compile(tmp_path, cpp_std):
             cmd.insert(1, extra[0])
         r = subprocess.run(cmd, capture_output=True, text=True)
         assert r.returncode == 0, f"{header}: {r.stderr[:2000]}"
+
+
+def test_bool_underlying_enum_generates(tmp_path):
+    import subprocess, sys
+    from pathlib import Path
+    hdr = Path(__file__).parent / "headers" / "json_bool_enum.h"
+    subprocess.run([sys.executable, "-m", "babelc_py.compat", "-std=gnu++20", "-babelcCompiler=g++",
+                    "-babelcForce", "-babelcOutput=Json", f"-babelcDirectory={tmp_path}", str(hdr)], check=True)
+    out = (tmp_path / "json_bool_enum.json.h").read_text()
+    assert 'CharT,"off"' in out and "static_cast<bool>(theValue)" in out

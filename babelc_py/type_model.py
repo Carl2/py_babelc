@@ -165,6 +165,7 @@ class CompilationUnit:
 
 FIXED_WIDTH_INTEGER_TYPES: frozenset[str] = frozenset(
     {
+        "bool",
         "std::uint8_t",
         "std::uint16_t",
         "std::uint32_t",
