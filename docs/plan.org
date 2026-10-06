@@ -489,67 +489,29 @@
    This library is *not generated* — it's hand-written code that depends on the
    generated ~.json.h~ headers.
 
-** DONE [#A] Task 19: Production-repo findings (JSON generator vs original babelc)
-   Harness: ~tools/prod_compare.py~ / ~tools/prod_compare_all.py~ (paths hardcoded to
-   /home/calle/tmp/release/repos and /tmp/opencode; run all 81 headers listed in
-   ~babelc_generate(... TYPE json)~ blocks). Result of the first run (54 headers reached
-   a verdict): 10 identical block sets, 17 differing, 10 where the original works but we fail,
-   rest fail in the original too (harness lacks <cstdint>/flags).
-   Findings:
-   1. *Types from included headers.* The original also generates code for types declared in
-      included project headers (e.g. ~trigger_configuration.h~ uses ~com::volvo::ocp::cde::v1::TriggerId~
-      from ~cde/common.h~; ~comm_stats_struct~ uses ~ServiceVersion~). py_babelc only extracts
-      types from the main file (~_is_from_main_file~) so validation fails with V008. Affects IPC too.
-      Need to find out which includes the original follows (user headers vs system headers).
-   2. *Brace initialisers.* ~double nbrSeeds{};~ is treated as /required/ by the original (its
-      member regex only recognises ~= init~). We treat it as optional (more correct, accepts a
-      superset on read). Decision needed: parity or correctness. Causes the IMPLEMENTATIONS-only
-      diffs in example.h, local_time, dtj_service_types, test_service_swap_data_types etc.
-   RESOLVED (commits "Follow types referenced from included user headers", "JSON: do not generate
-   included types reachable only through interfaces", "Treat brace-initialised fields as required",
-   "JSON: emit using-declarations for namespaces of referred types"):
-   - 1 done: lazy following of referenced structs/enums/typedefs from non-system includes, never
-     included interfaces or unreferenced types (verified against the original with a two-header
-     example). JSON closure starts at main-file types (~CompilationUnit.primary_names~) and does not
-     follow interface signatures, like the original.
-   - 2 done: parity, brace-init fields are required.
-   - New: the original emits ~using ::ns::readJSON/writeJSON/interpretJSON;~ for the namespaces of
-     referred types before each interpret/write template; now replicated.
-   Latest run: 38 headers (where the original works) give identical block sets; the 3 remaining
-   differences are harness name collisions (two ~types.h~, two ~storage_json.h~ share an output dir).
-   Still open: harness should use per-repo output dirs and ~-include cstdint~; the "ours fails"
-   cases and item 3 below.
-   3. Other failures to triage: ~annotate attribute cannot be applied to types~ (data_source_persistent.h,
-      pre_process rewriting an attribute in an unsupported position), ~unresolvable type ValueType~ /
-      ~EmergencyCallType~ (probably same as 1 or using-declarations), persistent_config (vector helper
-      and several types missing).
+** DONE [#A] Task 19: Validation against a large real-world code base
+A harness (kept outside this repository) ran the original babelc and py_babelc over several hundred headers from a production code base and compared results (block-set diff for JSON, g++ syntax check).
+Findings and fixes:
+- Types from included user headers are followed lazily (never interfaces or unreferenced types), like the original; JSON closure starts at main-file types.
+- Brace-initialised fields (~T x{};~) are treated as required, for parity with the original.
+- JSON emits ~using ::ns::readJSON/writeJSON/interpretJSON;~ for namespaces of referred types.
+- Attributes on alias declarations and on enums with underlying type are moved to where clang accepts them.
+- ~<cstdint>~ is added when fixed-width integers are used.
+- User include dirs are not made system dirs; sysroot headers count as user headers unless they are toolchain headers.
+- bool is an accepted enum underlying type.
 
-** DONE [#A] Task 20: IPC fixes from production build (app-core-data-engine)
-Built app-core-data-engine with the POC SDK and py-babelc; ~make~ now succeeds.
-- Included user headers keep -I dirs as user includes (not -isystem); enum attributes after underlying type are moved before the name.
+** DONE [#A] Task 20: IPC fixes found by building real projects
 - IPC: map and optional container templates, unified dependency order (containers, enums, structs, variants).
-- IPC: wire view types (~_ArrayView~, ~VariantType~, ~std::array<..,1>~), alias canonicalisation, vector read loop like original.
-- IPC: complicated return types use IpcRead/WriteContainer; Boolean typedef for return types.
-- IPC: variant read/write code (~variant.j2~; boost ~which()~/~boost::get~, std ~index()~/~std::get~).
+- IPC: wire view types (~_ArrayView~, ~VariantType~, ~std::array<..,1>~), alias canonicalisation, vector read loop like original, complex-element ~std::array~ read by index.
+- IPC: complicated return types use IpcRead/WriteContainer; Boolean typedef for return types; leading ~::~ in qualified parameter types.
+- IPC: variant read/write code (~variant.j2~; boost ~which()~/~boost::get~, std ~index()~/~std::get~), enum alternatives via ~EnumReference~.
+- IPC: ~ipc_type("Object"|"FileDescriptor")~ implemented.
 - Struct TupleView uses wire view types for container fields.
 Open: validation parity with original, rvalue-ref params, x86-only include discovery, interface_name regex.
 
-** DONE [#A] Task 21: Sweep over all production repos
-~tools/sweep.py REPOS OUT --orig <SDK babelc> --boost <dir>~ runs py_babelc (and the original on failure) over every ~babelc_generate()~ header in ~/home/calle/tmp/release/repos~ (master repos fast-forwarded first).
-Result: 670 jobs: 553 ok, 49 fail in both tools (missing include paths for ~ocp/icc/*~, ~script_types.h~, ~spapi_defines.h~, ~nlohmann/json.hpp~; harness limits), 68 skipped (header not found). No case where the original works and py_babelc fails.
-Harness: suffix search for headers (incl. ~dep/*~), ~-include cstdint~, ~dep/*/include~ dirs.
-Found and fixed: ~ipc_type("Object"|"FileDescriptor")~ was never implemented in the IPC generator (types went over the wire as plain string/enum). Now ~IpcPolicy::<Kind>::IpcRead/WriteContainer~ plus ~typename IpcPolicy::<Kind>~ in signatures, matching the original (test ~test_ipc_type_policy_types~). V011 accepts string aliases.
-Open: 68 skipped headers not triaged; rebuild app-core-data-engine and app-driver-authentication with the fix.
+** DONE [#A] Task 21: Sweep over all headers of a production code base
+Result: 670 jobs: 553 ok, 49 fail in both tools (missing include paths; harness limits), 68 skipped (header not found). No case where the original works and py_babelc fails.
 
-** IN-PROGRESS [#A] Task 22: py-babelc as default babelc in the Yocto image build
-Goal: ~kas build kas/portable.yml --target aphrodite-portable-image~ uses py_babelc for all recipes; then build an SDK for colleagues. Decisions (see org-roam note py-babelc_in_yocto_image_build): tarball in ~files/~ for now; real licences for wheel recipes; py-babelc becomes ~babelc~, C++ kept as ~babelc-cpp~; only ~kas/portable.yml~ (note ~portable-vvcm.yml~); Stream/Dep generators are unused in production and unsupported.
-Subtasks:
-1. DONE py-babelc recipe: install ~babelc~ and ~py-babelc~ wrapper, PROVIDES babelc-native, DEPENDS python3-native, python3-jinja2, python3-libclang-pip, python3-pymonad; BBCLASSEXTEND native nativesdk.
-2. DONE Recipes ~python3-libclang-pip~ (libclang 18.1.1 wheel) and ~python3-pymonad~ (2.4.0 wheel): unzip into site-packages, native and nativesdk, correct LICENSE/LIC_FILES_CHKSUM.
-3. DONE Rename C++ recipe to ~babelc-cpp~ (keep ~sdbus-policy.h~ shipped from the target variant); decide which recipe ships ~sdbus-policy.h~.
-4. DONE ~kas/portable.yml~: ~PREFERRED_PROVIDER_babelc-native = "py-babelc"~ in ~local_conf_header~.
-5. DONE ~sspc-sdk.bb~: nativesdk-babelc -> nativesdk-py-babelc, add nativesdk python deps, keep babelc-dev.
-6. DONE Validate on one recipe (app-service-discovery) with ~bitbake~, then the full image.
-7. IN-PROGRESS Build SDK, install, build app-core-data-engine and app-service-discovery without ~PY_BABELC_PYTHON~.
-8. DONE Re-archive py_babelc HEAD into the recipe tarball; later switch to a GitHub SRC_URI.
-Open before publishing: sanitise history/tools (author email, home paths), licence/attribution for original babelc text, revoke the token embedded in the git remote URL.
+** IN-PROGRESS [#A] Task 22: py-babelc as default babelc in a Yocto image build
+~compat.py~ (original babelc command line) plus a Yocto recipe (wrapper installs ~babelc~ and ~py-babelc~, PROVIDES babelc-native) and wheel recipes for libclang and PyMonad. A full image build and app builds succeeded with py_babelc as the only generator. Stream/Dep generators are unsupported.
+Open: SDK for colleagues to test; later a GitHub SRC_URI instead of a tarball.

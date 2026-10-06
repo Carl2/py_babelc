@@ -526,7 +526,7 @@ _TOOLCHAIN_HEADER_MARKERS = ("/c++/", "/gcc/", "/clang/", "/boost/", "/bits/")
 def _is_user_header(cursor: Cursor) -> bool:
     """True for cursors in any file except compiler/standard/boost headers.
 
-    Project headers installed into a sysroot (e.g. /usr/include/ocp/...)
+    Project headers installed into a sysroot (e.g. /usr/include/<project>/...)
     count as system headers to the compiler, but the original babelc follows
     them too, so only well-known toolchain locations are excluded.
     """

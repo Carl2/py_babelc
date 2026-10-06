@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <memory>
-namespace com { namespace volvo { namespace cde { namespace v1 {
+namespace com { namespace example { namespace svc { namespace v1 {
   struct TriggerId { std::uint32_t value; };
   struct Unused { std::uint32_t u; };
   struct Logger {

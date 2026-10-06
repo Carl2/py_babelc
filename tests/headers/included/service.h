@@ -1,5 +1,5 @@
 #include "common.h"
-namespace com { namespace volvo { namespace cde { namespace v1 {
+namespace com { namespace example { namespace svc { namespace v1 {
   struct Trigger { TriggerId id; };
   typedef std::shared_ptr<Logger> LoggerPtr;
   struct Service {
