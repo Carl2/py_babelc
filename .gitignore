@@ -19,3 +19,6 @@ hoppla.hpp
 \#*\#
 *~
 .dir-locals.el
+
+# uv
+uv.lock
