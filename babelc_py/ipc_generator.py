@@ -123,6 +123,10 @@ class EnrichedStruct:
     simple_write_fields: tuple[EnrichedField, ...]
     complicated_write_fields: tuple[EnrichedField, ...]
     has_enum_fields: bool
+    # Fields in declaration order, grouped into runs of consecutive simple
+    # fields (batched into one get/appendMessageArguments call) or single
+    # complicated fields. D-Bus struct members MUST be serialized in order.
+    field_runs: tuple[tuple[bool, tuple[EnrichedField, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -614,7 +618,22 @@ def _enrich_struct(struct: StructType, cu: CompilationUnit) -> EnrichedStruct:
         simple_write_fields=simple_r,
         complicated_write_fields=complicated_r,
         has_enum_fields=has_enum,
+        field_runs=_field_runs(enriched),
     )
+
+
+def _field_runs(
+    fields: tuple[EnrichedField, ...],
+) -> tuple[tuple[bool, tuple[EnrichedField, ...]], ...]:
+    """Split fields into ordered runs: consecutive simple fields together,
+    each complicated field on its own. Preserves declaration order."""
+    runs: list[tuple[bool, tuple[EnrichedField, ...]]] = []
+    for f in fields:
+        if not f.is_complicated and runs and not runs[-1][0]:
+            runs[-1] = (False, runs[-1][1] + (f,))
+        else:
+            runs.append((f.is_complicated, (f,)))
+    return tuple(runs)
 
 
 # ---------------------------------------------------------------------------

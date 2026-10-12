@@ -326,3 +326,18 @@ def test_leading_colon_param_types_use_containers(tmp_path):
                     "-babelcForce", "-babelcOutput=Ipc", f"-babelcDirectory={tmp_path}", str(hdr)], check=True)
     out = (tmp_path / "ipc_leading_colons.ipc.h").read_text()
     assert "IpcWriteContainer(\n                theIpcMessage,\n                items" in out.replace("<IpcPolicy, typename IpcPolicy::Boolean>", "") or "IpcWriteContainer" in out.split("void f(")[1]
+
+
+def test_struct_fields_serialized_in_declaration_order(tmp_path):
+    """D-Bus structs are positional: simple and complicated fields must be
+    read/written in declaration order, not grouped by kind."""
+    from pathlib import Path
+    import subprocess, sys
+    hdr = Path(__file__).parent / "headers" / "ipc_struct_order.h"
+    subprocess.run([sys.executable, "-m", "babelc_py.compat", "-std=gnu++20", "-babelcCompiler=g++",
+                    "-babelcForce", "-babelcOutput=Ipc", f"-babelcDirectory={tmp_path}", str(hdr)], check=True)
+    out = (tmp_path / "ipc_struct_order.ipc.h").read_text()
+    for marker in ("IpcReadContainer( MessageT &&theMessage, ::ns::Mixed",
+                   "IpcWriteContainer(  MessageT &&theMessage, const ::ns::Mixed"):
+        body = out.split(marker)[2].split("\n    }")[0]
+        assert body.index("theStruct.first") < body.index("theStruct.items") < body.index("theStruct.last")

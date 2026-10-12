@@ -37,17 +37,18 @@
 
         std::string theErrorString;
 {% endif %}
-{% if struct.simple_read_fields %}
+{% for complicated, fields in struct.field_runs %}
+{% if complicated %}
+        {{ fields[0].read_expr }}
+{% else %}
 
         IpcPolicy::getMessageArguments(
             theMessage,
-            {% for field in struct.simple_read_fields %}
+            {% for field in fields %}
             {{ field.read_expr }}{{ "," if not loop.last }}
             {% endfor %}
         );
 {% endif %}
-{% for field in struct.complicated_read_fields %}
-        {{ field.read_expr }}
 {% endfor %}
 {% if struct.has_enum_fields %}
 
@@ -57,17 +58,18 @@
     template <class IpcPolicy, typename Boolean, typename MessageT>
     void IpcWriteContainer(  MessageT &&theMessage, const {{ struct|qualified }} &theStruct ) {
         typename IpcPolicy::template WriteContainerScope<{{ struct|qualified }}_TupleView<Boolean,IpcPolicy>> theContainer( theMessage );
-{% if struct.simple_write_fields %}
+{% for complicated, fields in struct.field_runs %}
+{% if complicated %}
+        {{ fields[0].write_expr }}
+{% else %}
 
         IpcPolicy::appendMessageArguments(
             theMessage,
-            {% for field in struct.simple_write_fields %}
+            {% for field in fields %}
             {{ field.write_expr }}{{ "," if not loop.last }}
             {% endfor %}
         );
 {% endif %}
-{% for field in struct.complicated_write_fields %}
-        {{ field.write_expr }}
 {% endfor %}
 
     }
